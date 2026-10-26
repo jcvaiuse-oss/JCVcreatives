@@ -1677,6 +1677,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 3: Remote Config & OTA Updates */}
           {activeTab === 'config' && (
             <div className="space-y-6">
+              {/* Android 7+ Standalone Offline APK Download Card */}
+              <div className="p-5 bg-gradient-to-r from-slate-900 to-emerald-950/40 border border-emerald-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Download className="w-5 h-5 text-emerald-400" />
+                    <h3 className="text-sm font-bold text-white">Android 7+ Offline Kiosk APK (v2.4.0)</h3>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Standalone offline Android package compatible with Android 7.0 Nougat through Android 14. Bundles all themes, stickers, and booth assets inside the APK.
+                  </p>
+                </div>
+
+                <a
+                  href="https://jcvcreatives.github.io/photobooth/JCVcreatives-Photobooth.apk"
+                  download="JCVcreatives-Photobooth.apk"
+                  onClick={() => soundEffects.playTap()}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition shrink-0 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download .APK</span>
+                </a>
+              </div>
+
               {/* Remote OTA Update Card */}
               <div className="p-5 bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>

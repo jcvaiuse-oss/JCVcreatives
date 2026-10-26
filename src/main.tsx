@@ -1,13 +1,35 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
 // Signal to standalone/WebView bootstrapper that React bundle has started mounting
 (window as unknown as { __JCV_MOUNTED__?: boolean }).__JCV_MOUNTED__ = true;
 
+// Polyfill navigator.mediaDevices.getUserMedia for older Android 7 WebViews
+try {
+  if (typeof navigator !== 'undefined') {
+    const nav = navigator as any;
+    if (!nav.mediaDevices) {
+      nav.mediaDevices = {};
+    }
+    if (!nav.mediaDevices.getUserMedia) {
+      const legacyGetUserMedia =
+        nav.getUserMedia || nav.webkitGetUserMedia || nav.mozGetUserMedia || nav.msGetUserMedia;
+      if (legacyGetUserMedia) {
+        nav.mediaDevices.getUserMedia = (constraints: MediaStreamConstraints) =>
+          new Promise((resolve, reject) => {
+            legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+          });
+      }
+    }
+  }
+} catch {
+  // Ignore in restricted environments
+}
+
 // Register Service Worker for 100% offline web and installed PWA operation
+// (Skipped automatically on file:// inside Android APK where assets are already local)
 try {
   if (
     typeof navigator !== 'undefined' &&
@@ -15,11 +37,13 @@ try {
     (window.location.protocol === 'https:' || window.location.hostname === 'localhost') &&
     !window.location.hostname.includes('googleusercontent.com')
   ) {
-    registerSW({
-      immediate: true,
-      onOfflineReady() {
-        window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
-      },
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('./sw.js')
+        .then(() => {
+          window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
+        })
+        .catch(() => {});
     });
   }
 } catch {

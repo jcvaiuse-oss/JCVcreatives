@@ -24,6 +24,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up JDK 17 for Android APK build
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -34,6 +40,9 @@ jobs:
 
       - name: Build project
         run: npm run build
+
+      - name: Build Android 7+ Offline APK
+        run: node scripts/build-android-apk.mjs
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -48,3 +57,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
