@@ -73,6 +73,19 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   useEffect(() => {
     const timer = triggerFeedAnimation(true);
 
+    // Automatically print to connected USB / Wireless / System printer on session completion
+    const currentPrinter = thermalPrinterService.getStatus();
+    if (currentPrinter.connectionType !== 'virtual') {
+      thermalPrinterService
+        .print(canvas, config.thermalPrinter, () => {})
+        .then((res) => {
+          if (res.success) {
+            setPrintedSuccessfully(true);
+          }
+        })
+        .catch(() => {});
+    }
+
     try {
       confetti({
         particleCount: 80,

@@ -131,8 +131,16 @@ export interface PaymentTransaction {
   kioskId: string;
 }
 
+export type PrinterConnectionType =
+  | 'usb'
+  | 'serial'
+  | 'bluetooth'
+  | 'network'
+  | 'system'
+  | 'virtual';
+
 export interface ThermalPrinterConfig {
-  connectionType: 'bluetooth' | 'usb' | 'virtual';
+  connectionType: PrinterConnectionType;
   deviceName?: string;
   paperWidthMm: 58 | 80;
   dotsPerLine: 384 | 576;
@@ -141,6 +149,10 @@ export interface ThermalPrinterConfig {
   printCopies: number;
   feedLines: number;
   density: 'light' | 'normal' | 'dark';
+  networkIp?: string;
+  networkPort?: number;
+  serialBaudRate?: number;
+  systemPrintColor?: boolean;
 }
 
 export interface EmailQueueItem {

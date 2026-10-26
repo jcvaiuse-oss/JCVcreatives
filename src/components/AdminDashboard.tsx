@@ -183,9 +183,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [isPrintingVouchers, setIsPrintingVouchers] = useState<boolean>(false);
 
-  // Test Print in progress
+  // Test Print & Universal USB/Wireless Printer settings
   const [isTestPrinting, setIsTestPrinting] = useState(false);
   const [testPrintFeedback, setTestPrintFeedback] = useState<string | null>(null);
+  const [printerIpInput, setPrinterIpInput] = useState<string>(
+    () => thermalPrinterService.getNetworkSettings().ip
+  );
+  const [printerPortInput, setPrinterPortInput] = useState<number>(
+    () => thermalPrinterService.getNetworkSettings().port
+  );
+  const [printerBaudRate, setPrinterBaudRate] = useState<number>(
+    () => thermalPrinterService.getNetworkSettings().baudRate
+  );
 
   // Home Screen 3-Strips Custom Photos State (Operator / Admin Control Only)
   const [homeStripPhotos, setHomeStripPhotos] = useState<string[]>(() => {
@@ -1787,71 +1796,298 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB 2: Thermal Driver & Hardware */}
+          {/* TAB 2: Universal USB & Wireless Printer Hub */}
           {activeTab === 'printer' && (
             <div className="space-y-6">
-              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl">
-                <h3 className="text-sm font-bold text-white mb-2">Driver Connection Mode</h3>
-                <p className="text-xs text-slate-400 mb-4">
-                  Connect your tablet directly to ESC/POS thermal printers via Web Bluetooth or USB OTG.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                  <button
-                    onClick={async () => {
-                      soundEffects.playTap();
-                      await thermalPrinterService.connectBluetooth();
-                    }}
-                    className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
-                      printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
-                        ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
-                        : 'border-slate-800 bg-slate-950 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="font-bold text-sm text-white mb-1">Bluetooth BLE</div>
-                    <div className="text-[11px] text-slate-400">Scan & pair wireless thermal receipt printer</div>
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      soundEffects.playTap();
-                      await thermalPrinterService.connectUSB();
-                    }}
-                    className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
-                      printerStatus.connectionType === 'usb' && printerStatus.isConnected
-                        ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
-                        : 'border-slate-800 bg-slate-950 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="font-bold text-sm text-white mb-1">USB OTG Cable</div>
-                    <div className="text-[11px] text-slate-400">Direct USB thermal printer connection</div>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      soundEffects.playTap();
-                      thermalPrinterService.useVirtualPrinter();
-                    }}
-                    className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
-                      printerStatus.connectionType === 'virtual'
-                        ? 'border-indigo-500 bg-indigo-950/40 text-indigo-200'
-                        : 'border-slate-800 bg-slate-950 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="font-bold text-sm text-white mb-1">Virtual Simulator</div>
-                    <div className="text-[11px] text-slate-400">Audio-visual simulator & browser print fallback</div>
-                  </button>
+              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold text-white">
+                      Universal USB Cord & Wireless Printer Connection
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Connect any thermal receipt printer, photo printer, inkjet, or laser printer via <span className="text-white font-semibold">USB Cord</span> or <span className="text-white font-semibold">Wireless (Bluetooth / Wi-Fi / AirPrint / Mopria)</span>.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-[11px] font-mono shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>All Printers Supported</span>
+                  </span>
                 </div>
 
-                {/* Printer Status Banner */}
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${printerStatus.isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-                    <span className="font-bold text-white">{printerStatus.deviceName}</span>
+                {/* Live Printer Connection Status Banner */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`w-3 h-3 rounded-full shrink-0 ${
+                        printerStatus.isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                      }`}
+                    />
+                    <div>
+                      <div className="font-bold text-white">{printerStatus.deviceName}</div>
+                      {printerStatus.details && (
+                        <div className="text-[11px] text-slate-400">{printerStatus.details}</div>
+                      )}
+                    </div>
                   </div>
                   {printerStatus.error && (
-                    <span className="text-rose-400 text-[11px]">{printerStatus.error}</span>
+                    <span className="text-rose-400 text-[11px] font-medium">{printerStatus.error}</span>
                   )}
+                </div>
+
+                {/* SECTION A: WIRED USB CORD CONNECTION MODES */}
+                <div>
+                  <div className="text-[11px] uppercase font-mono tracking-wider text-emerald-400 mb-2.5 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>1. Connect via USB Cord (OTG / Direct USB / USB-Serial / OS Driver)</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Direct USB Cord (WebUSB + Native Android USB Host) */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        await thermalPrinterService.connectUSB();
+                      }}
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                        printerStatus.connectionType === 'usb' && printerStatus.isConnected
+                          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
+                          : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-sm text-white">USB Cord (Direct / OTG)</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+                            Plug & Play
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Direct USB cable connection for 58mm/80mm thermal printers (auto-detects all USB interfaces & endpoints).
+                        </div>
+                      </div>
+                      <div className="mt-3 text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
+                        <span>Pair USB Cord Printer</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </div>
+                    </button>
+
+                    {/* USB-Serial Cord (CH340 / PL2303 / CP210x / FTDI) */}
+                    <div
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
+                        printerStatus.connectionType === 'serial' && printerStatus.isConnected
+                          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
+                          : 'border-slate-800 bg-slate-950'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-sm text-white">USB-Serial COM Cord</span>
+                          <select
+                            value={printerBaudRate}
+                            onChange={(e) => setPrinterBaudRate(Number(e.target.value))}
+                            className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] font-mono text-white"
+                          >
+                            <option value={9600}>9600 baud</option>
+                            <option value={19200}>19200 baud</option>
+                            <option value={38400}>38400 baud</option>
+                            <option value={115200}>115200 baud</option>
+                          </select>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          For USB printers using CH340, PL2303, or CP2102 virtual COM port cables on PC/Mac.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          soundEffects.playTap();
+                          await thermalPrinterService.connectSerial(printerBaudRate);
+                        }}
+                        className="mt-3 w-full py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                      >
+                        <span>Connect USB-Serial Port</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Universal System USB / Wireless Driver (Any Printer) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        thermalPrinterService.useSystemPrinter();
+                      }}
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                        printerStatus.connectionType === 'system'
+                          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
+                          : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-sm text-white">Any OS USB / Wireless</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">
+                            Universal
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Works with ANY USB cord or Wireless printer installed on Windows, Mac, Android (Mopria/USB Print), or iOS (AirPrint).
+                        </div>
+                      </div>
+                      <div className="mt-3 text-[11px] font-semibold text-sky-400 flex items-center gap-1">
+                        <span>Enable Universal System Print</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SECTION B: WIRELESS CONNECTION MODES (BLUETOOTH & WI-FI IP) */}
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="text-[11px] uppercase font-mono tracking-wider text-sky-400 mb-2.5 flex items-center gap-1.5">
+                    <Wifi className="w-3.5 h-3.5" />
+                    <span>2. Connect Wirelessly (Bluetooth BLE / Classic SPP / Wi-Fi Network IP)</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Wireless Bluetooth */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        await thermalPrinterService.connectBluetooth();
+                      }}
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                        printerStatus.connectionType === 'bluetooth' && printerStatus.isConnected
+                          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
+                          : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold text-sm text-white mb-1">
+                          Wireless Bluetooth (BLE & SPP)
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Scan & pair wireless Bluetooth thermal printers (supports Web Bluetooth BLE & Native Android Bluetooth Classic SPP).
+                        </div>
+                      </div>
+                      <div className="mt-3 text-[11px] font-semibold text-sky-400 flex items-center gap-1">
+                        <span>Scan Wireless Bluetooth</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </div>
+                    </button>
+
+                    {/* Wireless Wi-Fi / LAN IP Printer */}
+                    <div
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between ${
+                        printerStatus.connectionType === 'network' && printerStatus.isConnected
+                          ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200'
+                          : 'border-slate-800 bg-slate-950'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold text-sm text-white mb-1">
+                          Wireless Wi-Fi / LAN IP Printer
+                        </div>
+                        <div className="text-[11px] text-slate-400 mb-2">
+                          Print wirelessly over local Wi-Fi network (Port 9100 Raw TCP or HTTP).
+                        </div>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={printerIpInput}
+                            onChange={(e) => setPrinterIpInput(e.target.value)}
+                            placeholder="192.168.1.100"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-xs"
+                          />
+                          <input
+                            type="number"
+                            value={printerPortInput}
+                            onChange={(e) => setPrinterPortInput(Number(e.target.value) || 9100)}
+                            placeholder="9100"
+                            className="w-18 px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEffects.playTap();
+                          thermalPrinterService.connectNetworkPrinter(printerIpInput, printerPortInput);
+                        }}
+                        className="mt-3 w-full py-1.5 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer transition"
+                      >
+                        <span>Connect Wi-Fi IP Printer</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Virtual Simulator */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        thermalPrinterService.useVirtualPrinter();
+                      }}
+                      className={`p-4 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
+                        printerStatus.connectionType === 'virtual'
+                          ? 'border-indigo-500 bg-indigo-950/40 text-indigo-200'
+                          : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold text-sm text-white mb-1">Virtual Simulator</div>
+                        <div className="text-[11px] text-slate-400">
+                          Built-in on-screen thermal dispenser simulation when running without a physical printer.
+                        </div>
+                      </div>
+                      <div className="mt-3 text-[11px] font-semibold text-indigo-400 flex items-center gap-1">
+                        <span>Use Simulator Mode</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Paper Roll Width & Print Density Settings */}
+              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-sm font-bold text-white mb-1">Paper Width Format (58mm / 80mm)</h4>
+                  <p className="text-xs text-slate-400">
+                    Select 58mm (384 dots) or 80mm (576 dots) to match your connected USB or Wireless printer paper width.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {([58, 80] as const).map((widthMm) => (
+                    <button
+                      key={widthMm}
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          thermalPrinter: {
+                            ...localConfig.thermalPrinter,
+                            paperWidthMm: widthMm,
+                            dotsPerLine: widthMm === 80 ? 576 : 384,
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                      }}
+                      className={`px-4 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                        localConfig.thermalPrinter.paperWidthMm === widthMm
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {widthMm}mm Roll
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1860,7 +2096,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <h4 className="text-sm font-bold text-white mb-1">Hardware Test & Alignment Slip</h4>
                   <p className="text-xs text-slate-400">
-                    Sends an ESC/POS diagnostic calibration pattern with density gradients and paper cutter commands.
+                    Sends a test print job to your active USB Cord, Wireless Bluetooth, Wi-Fi IP, or System OS printer.
                   </p>
                   {testPrintFeedback && (
                     <div className="text-xs text-indigo-300 mt-2 font-medium">{testPrintFeedback}</div>
@@ -1870,7 +2106,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   disabled={isTestPrinting}
                   onClick={handleTestPrint}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 shrink-0"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 shrink-0 cursor-pointer"
                 >
                   {isTestPrinting ? 'Printing Test...' : 'Print Calibration Slip'}
                 </button>
