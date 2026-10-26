@@ -40,6 +40,8 @@ import {
   Image as ImageIcon,
   Shuffle,
   RotateCcw,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   RemoteKioskConfig,
@@ -63,6 +65,7 @@ import {
   safeStorageRemove,
 } from '../services/storage';
 import { emailDeliveryService } from '../services/email';
+import { paymentService } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
 import {
   ATTRACT_OCCASION_THEMES,
@@ -165,6 +168,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newVoucherDiscount, setNewVoucherDiscount] = useState(100);
   const [newVoucherMaxUses, setNewVoucherMaxUses] = useState(50);
   const [newVoucherDesc, setNewVoucherDesc] = useState('');
+
+  // Cashier Batch Voucher Generator state
+  const [batchCount, setBatchCount] = useState<number>(20);
+  const [batchPrefix, setBatchPrefix] = useState<string>('JCV');
+  const [batchMaxUses, setBatchMaxUses] = useState<number>(1);
+  const [batchDiscount, setBatchDiscount] = useState<number>(100);
+  const [batchLabel, setBatchLabel] = useState<string>('Cashier Paid Pass');
+  const [lastGeneratedBatch, setLastGeneratedBatch] = useState<Voucher[]>([]);
+  const [voucherFilter, setVoucherFilter] = useState<'all' | 'available' | 'used'>('all');
+  const [voucherSearch, setVoucherSearch] = useState<string>('');
+  const [voucherFeedbackMsg, setVoucherFeedbackMsg] = useState<string | null>(null);
+  const [showTicketSheet, setShowTicketSheet] = useState<boolean>(true);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [isPrintingVouchers, setIsPrintingVouchers] = useState<boolean>(false);
 
   // Test Print in progress
   const [isTestPrinting, setIsTestPrinting] = useState(false);
@@ -285,7 +302,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const unsub = thermalPrinterService.subscribe(setPrinterStatus);
     analyticsService.init().then(setTelemetry);
 
-    storageService.getAllVouchers().then(setVouchers);
+    paymentService.initVouchers().then(() => {
+      storageService.getAllVouchers().then(setVouchers);
+    });
     storageService.getAllCaptures().then(setCaptures);
     storageService.getQueuedEmails().then(setQueuedEmails);
 
@@ -522,6 +541,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       description: newVoucherDesc || 'Custom Admin Pass',
       expiresAt: Date.now() + 180 * 24 * 60 * 60 * 1000,
       active: true,
+      createdAt: Date.now(),
     };
 
     await storageService.saveVoucher(voucher);
@@ -529,6 +549,190 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setVouchers(updated);
     setNewVoucherCode('');
     setNewVoucherDesc('');
+    setVoucherFeedbackMsg(`✓ Added voucher code ${voucher.code}`);
+    setTimeout(() => setVoucherFeedbackMsg(null), 3000);
+  };
+
+  const handleGenerateCashierBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    soundEffects.playTap();
+    const qty = Math.max(1, Math.min(500, Number(batchCount) || 1));
+
+    const generated = await paymentService.generateCashierVouchersBatch({
+      count: qty,
+      prefix: batchPrefix || 'JCV',
+      discountPercent: Number(batchDiscount) || 100,
+      maxUses: Math.max(1, Number(batchMaxUses) || 1),
+      batchName: batchLabel.trim() || 'Cashier Paid Pass',
+    });
+
+    const updated = await storageService.getAllVouchers();
+    setVouchers(updated);
+    setLastGeneratedBatch(generated);
+    setShowTicketSheet(true);
+    soundEffects.playSuccessChime();
+    setVoucherFeedbackMsg(
+      `✓ Generated ${generated.length} offline cashier voucher${generated.length > 1 ? 's' : ''}! Ready to give to customers.`
+    );
+    setTimeout(() => setVoucherFeedbackMsg(null), 4500);
+  };
+
+  const handleCopyText = (text: string, label = 'copied') => {
+    soundEffects.playTap();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedCode(label);
+      setVoucherFeedbackMsg(`✓ Copied ${label === 'ALL' ? 'voucher codes' : label} to clipboard!`);
+      setTimeout(() => {
+        setCopiedCode(null);
+        setVoucherFeedbackMsg(null);
+      }, 2500);
+    } catch {
+      setVoucherFeedbackMsg('Could not copy automatically — please select and copy.');
+      setTimeout(() => setVoucherFeedbackMsg(null), 3000);
+    }
+  };
+
+  const handleDownloadVouchersList = (list: Voucher[]) => {
+    soundEffects.playTap();
+    if (list.length === 0) return;
+
+    const header = [
+      `====================================================`,
+      `  JCVCREATIVES PHOTOBOOTH — CASHIER VOUCHER LIST`,
+      `  Generated: ${new Date().toLocaleString()}`,
+      `  Session Price: ${localConfig.currencySymbol}${localConfig.pricePerSession.toFixed(2)}`,
+      `  Total Codes: ${list.length} (Works 100% Offline)`,
+      `====================================================`,
+      ``,
+      `CODE           | VALUE      | MAX USES | STATUS     | BATCH / NOTE`,
+      `-------------------------------------------------------------------------`,
+    ];
+
+    const rows = list.map((v, i) => {
+      const status = v.maxUses > 0 && v.usedCount >= v.maxUses ? 'USED' : 'AVAILABLE';
+      const num = String(i + 1).padStart(3, '0');
+      return `${num}. ${v.code.padEnd(10, ' ')} | ${String(v.discountPercent + '% OFF').padEnd(10, ' ')} | ${String(
+        v.usedCount + '/' + (v.maxUses > 0 ? v.maxUses : '∞')
+      ).padEnd(8, ' ')} | ${status.padEnd(10, ' ')} | ${v.description}`;
+    });
+
+    const content = [...header, ...rows, ``].join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `JCV-Cashier-Vouchers-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    setVoucherFeedbackMsg(`✓ Downloaded ${list.length} voucher codes as offline .TXT sheet!`);
+    setTimeout(() => setVoucherFeedbackMsg(null), 3500);
+  };
+
+  const handlePrintCashierSlipsThermal = async (list: Voucher[]) => {
+    if (list.length === 0) return;
+    soundEffects.playTap();
+    setIsPrintingVouchers(true);
+    setVoucherFeedbackMsg('Printing cashier voucher slips on thermal printer...');
+
+    const toPrint = list.slice(0, 30); // Cap per single thermal strip run so roll doesn't overflow
+    const width = localConfig.thermalPrinter.paperWidthMm === 80 ? 576 : 384;
+    const slipHeight = 135;
+    const headerHeight = 90;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = headerHeight + toPrint.length * slipHeight + 30;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('JCVCREATIVES PHOTOBOOTH', width / 2, 32);
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(`CASHIER VOUCHERS (${toPrint.length} PCS)`, width / 2, 54);
+    ctx.font = '12px monospace';
+    ctx.fillText(new Date().toLocaleString(), width / 2, 74);
+
+    toPrint.forEach((v, idx) => {
+      const top = headerHeight + idx * slipHeight;
+
+      // Dashed tear-off line
+      ctx.save();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(10, top);
+      ctx.lineTo(width - 10, top);
+      ctx.stroke();
+      ctx.restore();
+
+      // Voucher box
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(16, top + 12, width - 32, slipHeight - 24);
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText(
+        `#${idx + 1} • JCVCREATIVES PHOTOBOOTH PASS (${localConfig.currencySymbol}${localConfig.pricePerSession.toFixed(0)})`,
+        width / 2,
+        top + 36
+      );
+
+      ctx.font = 'bold 28px monospace';
+      ctx.fillText(v.code, width / 2, top + 74);
+
+      ctx.font = '11px monospace';
+      ctx.fillText('Enter this code on the photobooth screen • 1 Use', width / 2, top + 100);
+    });
+
+    const res = await thermalPrinterService.print(canvas, localConfig.thermalPrinter);
+    setIsPrintingVouchers(false);
+    if (res.success) {
+      soundEffects.playSuccessChime();
+      setVoucherFeedbackMsg(`✓ Printed ${toPrint.length} cashier voucher slips!`);
+    } else {
+      setVoucherFeedbackMsg(res.error || 'Could not print to thermal printer.');
+    }
+    setTimeout(() => setVoucherFeedbackMsg(null), 4000);
+  };
+
+  const handleDeleteSingleVoucher = async (code: string) => {
+    soundEffects.playTap();
+    await storageService.deleteVoucher(code);
+    const updated = await storageService.getAllVouchers();
+    setVouchers(updated);
+    setLastGeneratedBatch((prev) => prev.filter((v) => v.code !== code));
+    setVoucherFeedbackMsg(`🗑️ Deleted voucher ${code}`);
+    setTimeout(() => setVoucherFeedbackMsg(null), 2500);
+  };
+
+  const handleClearUsedVouchers = async () => {
+    soundEffects.playTap();
+    await storageService.clearUsedVouchers();
+    const updated = await storageService.getAllVouchers();
+    setVouchers(updated);
+    setLastGeneratedBatch((prev) =>
+      prev.filter((v) => !(v.maxUses > 0 && v.usedCount >= v.maxUses))
+    );
+    setVoucherFeedbackMsg('🧹 Cleared all used/redeemed vouchers.');
+    setTimeout(() => setVoucherFeedbackMsg(null), 3000);
   };
 
   // Test Print Hardware Alignment Slip
@@ -1809,83 +2013,498 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB 4: Vouchers & VIP Passes */}
-          {activeTab === 'vouchers' && (
-            <div className="space-y-6">
-              {/* Create new voucher card */}
-              <form onSubmit={handleAddVoucher} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex flex-wrap gap-3 items-end text-xs">
-                <div>
-                  <label className="text-slate-400 block mb-1">Pass Code</label>
-                  <input
-                    type="text"
-                    value={newVoucherCode}
-                    onChange={(e) => setNewVoucherCode(e.target.value)}
-                    placeholder="E.g. VIP2026"
-                    className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Discount %</label>
-                  <input
-                    type="number"
-                    value={newVoucherDiscount}
-                    onChange={(e) => setNewVoucherDiscount(Number(e.target.value))}
-                    className="w-20 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Max Uses</label>
-                  <input
-                    type="number"
-                    value={newVoucherMaxUses}
-                    onChange={(e) => setNewVoucherMaxUses(Number(e.target.value))}
-                    className="w-24 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"
-                  />
-                </div>
-                <div className="flex-1 min-w-[140px]">
-                  <label className="text-slate-400 block mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={newVoucherDesc}
-                    onChange={(e) => setNewVoucherDesc(e.target.value)}
-                    placeholder="Wedding VIP guest pass"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Voucher</span>
-                </button>
-              </form>
+          {/* TAB 4: Vouchers & Cashier Batch Generator */}
+          {activeTab === 'vouchers' && (() => {
+            const isVoucherUsed = (v: Voucher) => v.maxUses > 0 && v.usedCount >= v.maxUses;
+            const availableVouchers = vouchers.filter((v) => !isVoucherUsed(v) && v.active);
+            const usedVouchers = vouchers.filter((v) => isVoucherUsed(v));
 
-              {/* Existing vouchers list */}
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                <h4 className="text-xs font-bold text-slate-300 mb-3">Active Promotional & VIP Passes</h4>
-                <div className="space-y-2 text-xs">
-                  {vouchers.map((v) => (
-                    <div
-                      key={v.code}
-                      className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between"
+            const filteredVouchers = vouchers
+              .filter((v) => {
+                if (voucherFilter === 'available') return !isVoucherUsed(v) && v.active;
+                if (voucherFilter === 'used') return isVoucherUsed(v);
+                return true;
+              })
+              .filter((v) => {
+                if (!voucherSearch.trim()) return true;
+                const q = voucherSearch.trim().toUpperCase();
+                return (
+                  v.code.toUpperCase().includes(q) ||
+                  (v.description || '').toUpperCase().includes(q) ||
+                  (v.batchName || '').toUpperCase().includes(q)
+                );
+              })
+              .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+            const sheetVouchers =
+              lastGeneratedBatch.length > 0
+                ? vouchers.filter((v) => lastGeneratedBatch.some((g) => g.code === v.code))
+                : availableVouchers.filter((v) => v.isCashierTicket || v.maxUses === 1);
+
+            return (
+              <div className="space-y-6">
+                {/* Feedback Banner */}
+                {voucherFeedbackMsg && (
+                  <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-between animate-fadeIn">
+                    <span>{voucherFeedbackMsg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setVoucherFeedbackMsg(null)}
+                      className="text-emerald-400 hover:text-white"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-pink-400 text-sm">{v.code}</span>
-                        <span className="text-slate-400">{v.description}</span>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Quick Summary Counters */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <div className="text-[11px] text-slate-400 uppercase font-mono">Available for Cashier</div>
+                    <div className="text-2xl font-black text-emerald-400 mt-1">{availableVouchers.length}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">Ready to hand to customers</div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <div className="text-[11px] text-slate-400 uppercase font-mono">Redeemed / Used</div>
+                    <div className="text-2xl font-black text-amber-400 mt-1">{usedVouchers.length}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">Already used at photobooth</div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <div className="text-[11px] text-slate-400 uppercase font-mono">Total Stored Offline</div>
+                    <div className="text-2xl font-black text-white mt-1">{vouchers.length}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">100% Offline Ready</div>
+                  </div>
+                </div>
+
+                {/* CASHIER BATCH VOUCHER GENERATOR */}
+                <div className="p-5 bg-gradient-to-br from-slate-900 via-slate-900 to-pink-950/30 border border-pink-500/30 rounded-2xl space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Ticket className="w-5 h-5 text-pink-400" />
+                        <h3 className="text-sm sm:text-base font-bold text-white">
+                          Cashier Batch Voucher Generator (Offline Ready)
+                        </h3>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-emerald-400 font-bold">{v.discountPercent}% Off</span>
-                        <span className="text-slate-500 font-mono">
-                          {v.usedCount} / {v.maxUses > 0 ? v.maxUses : '∞'} used
-                        </span>
+                      <p className="text-xs text-slate-300 mt-1">
+                        Enter how many vouchers to generate. The cashier keeps these codes and gives one to each customer after paying ({localConfig.currencySymbol}
+                        {localConfig.pricePerSession.toFixed(2)}). Once the customer enters a code on the payment screen, it is automatically marked as <span className="text-amber-300 font-semibold">USED</span>.
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-[11px] font-mono shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Works Offline</span>
+                    </span>
+                  </div>
+
+                  {/* Quick Quantity Presets */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-400 font-medium">Quick Quantity:</span>
+                    {[5, 10, 20, 50, 100].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          soundEffects.playTap();
+                          setBatchCount(preset);
+                        }}
+                        className={`px-3 py-1 rounded-lg border font-mono font-bold transition cursor-pointer ${
+                          batchCount === preset
+                            ? 'bg-pink-600 border-pink-500 text-white'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        {preset} Vouchers
+                      </button>
+                    ))}
+                  </div>
+
+                  <form
+                    onSubmit={handleGenerateCashierBatch}
+                    className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end text-xs pt-1"
+                  >
+                    <div>
+                      <label className="text-slate-300 font-semibold block mb-1">
+                        How Many Vouchers?
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={batchCount}
+                        onChange={(e) => setBatchCount(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-pink-500/40 text-white font-mono font-bold text-sm focus:outline-none focus:border-pink-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-400 block mb-1">Code Prefix</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={batchPrefix}
+                        onChange={(e) => setBatchPrefix(e.target.value.toUpperCase())}
+                        placeholder="JCV"
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-400 block mb-1">Uses per Code</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={batchMaxUses}
+                        onChange={(e) => setBatchMaxUses(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-400 block mb-1">Batch Note / Label</label>
+                      <input
+                        type="text"
+                        value={batchLabel}
+                        onChange={(e) => setBatchLabel(e.target.value)}
+                        placeholder="Cashier Paid Pass"
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 rounded-xl bg-pink-600 hover:bg-pink-500 active:scale-98 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-pink-600/20 transition cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>Generate {batchCount} Vouchers</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* CASHIER VOUCHER SHEET (FOR PRINTING / COPYING / GIVING TO CUSTOMERS) */}
+                {sheetVouchers.length > 0 && (
+                  <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Scroll className="w-4 h-4 text-amber-400" />
+                          <span>
+                            {lastGeneratedBatch.length > 0
+                              ? `Newly Generated Cashier Batch (${sheetVouchers.length} Vouchers)`
+                              : `Cashier Single-Use Vouchers (${sheetVouchers.length} Available)`}
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Print, download, or copy these codes for the cashier to hand out after receiving customer payment.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyText(
+                              sheetVouchers
+                                .filter((v) => !isVoucherUsed(v))
+                                .map((v) => v.code)
+                                .join('\n'),
+                              'ALL'
+                            )
+                          }
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                          {copiedCode === 'ALL' ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-slate-300" />
+                          )}
+                          <span>Copy Unused Codes</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDownloadVouchersList(
+                              sheetVouchers.filter((v) => !isVoucherUsed(v))
+                            )
+                          }
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Download .TXT Sheet</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isPrintingVouchers}
+                          onClick={() =>
+                            handlePrintCashierSlipsThermal(
+                              sheetVouchers.filter((v) => !isVoucherUsed(v))
+                            )
+                          }
+                          className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>
+                            {isPrintingVouchers ? 'Printing Slips...' : 'Print on Thermal Printer'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowTicketSheet(!showTicketSheet)}
+                          className="px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-300 text-xs font-medium transition cursor-pointer"
+                        >
+                          {showTicketSheet ? 'Hide Ticket Grid' : 'Show Ticket Grid'}
+                        </button>
                       </div>
                     </div>
-                  ))}
+
+                    {showTicketSheet && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-2 max-h-96 overflow-y-auto pr-1">
+                        {sheetVouchers.map((v, idx) => {
+                          const used = isVoucherUsed(v);
+                          return (
+                            <div
+                              key={v.code}
+                              onClick={() => handleCopyText(v.code, v.code)}
+                              title="Tap to copy voucher code"
+                              className={`p-3 rounded-xl border-2 border-dashed flex flex-col justify-between transition cursor-pointer select-all ${
+                                used
+                                  ? 'border-slate-800 bg-slate-950/40 opacity-50'
+                                  : 'border-amber-500/40 bg-slate-950 hover:border-amber-400'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
+                                <span>#{idx + 1}</span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded font-bold uppercase ${
+                                    used
+                                      ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                                      : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                  }`}
+                                >
+                                  {used ? 'USED' : 'VALID'}
+                                </span>
+                              </div>
+
+                              <div
+                                className={`text-center font-mono font-black text-base tracking-wider my-1 ${
+                                  used ? 'line-through text-slate-500' : 'text-white'
+                                }`}
+                              >
+                                {v.code}
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-800/80 pt-1.5 mt-1">
+                                <span>
+                                  {localConfig.currencySymbol}
+                                  {localConfig.pricePerSession.toFixed(0)} Paid
+                                </span>
+                                <span className="font-mono">
+                                  {v.usedCount}/{v.maxUses > 0 ? v.maxUses : '∞'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Create single custom voucher card */}
+                <form
+                  onSubmit={handleAddVoucher}
+                  className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex flex-wrap gap-3 items-end text-xs"
+                >
+                  <div>
+                    <label className="text-slate-400 block mb-1">Custom Promo Code</label>
+                    <input
+                      type="text"
+                      value={newVoucherCode}
+                      onChange={(e) => setNewVoucherCode(e.target.value)}
+                      placeholder="E.g. VIP2026"
+                      className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Discount %</label>
+                    <input
+                      type="number"
+                      value={newVoucherDiscount}
+                      onChange={(e) => setNewVoucherDiscount(Number(e.target.value))}
+                      className="w-20 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Max Uses</label>
+                    <input
+                      type="number"
+                      value={newVoucherMaxUses}
+                      onChange={(e) => setNewVoucherMaxUses(Number(e.target.value))}
+                      className="w-24 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[140px]">
+                    <label className="text-slate-400 block mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={newVoucherDesc}
+                      onChange={(e) => setNewVoucherDesc(e.target.value)}
+                      placeholder="Event VIP multi-use pass"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Custom Code</span>
+                  </button>
+                </form>
+
+                {/* Existing & Generated Vouchers List with Filter & Search */}
+                <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setVoucherFilter('all')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          voucherFilter === 'all'
+                            ? 'bg-pink-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        All ({vouchers.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoucherFilter('available')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          voucherFilter === 'available'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        Available ({availableVouchers.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVoucherFilter('used')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          voucherFilter === 'used'
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        Used ({usedVouchers.length})
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={voucherSearch}
+                        onChange={(e) => setVoucherSearch(e.target.value)}
+                        placeholder="Search code..."
+                        className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white font-mono uppercase focus:outline-none focus:border-slate-600"
+                      />
+                      {usedVouchers.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearUsedVouchers}
+                          className="px-3 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Clear Used</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs max-h-96 overflow-y-auto pr-1">
+                    {filteredVouchers.length === 0 ? (
+                      <div className="py-8 text-center text-slate-500">
+                        No vouchers match the selected filter.
+                      </div>
+                    ) : (
+                      filteredVouchers.map((v) => {
+                        const used = isVoucherUsed(v);
+                        return (
+                          <div
+                            key={v.code}
+                            className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                              used
+                                ? 'bg-slate-950/50 border-slate-800/60 opacity-60'
+                                : 'bg-slate-950 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span
+                                className={`font-mono font-bold text-sm tracking-wider ${
+                                  used ? 'line-through text-slate-500' : 'text-pink-400'
+                                }`}
+                              >
+                                {v.code}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                  used
+                                    ? 'bg-rose-950 text-rose-400 border border-rose-800/60'
+                                    : 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
+                                }`}
+                              >
+                                {used ? 'USED' : 'AVAILABLE'}
+                              </span>
+                              <span className="text-slate-400 truncate max-w-[200px]">
+                                {v.description}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between sm:justify-end gap-3">
+                              {v.lastUsedAt && (
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  Used {new Date(v.lastUsedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                              <span className="text-emerald-400 font-bold">{v.discountPercent}% Off</span>
+                              <span className="text-slate-400 font-mono">
+                                {v.usedCount} / {v.maxUses > 0 ? v.maxUses : '∞'} used
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(v.code, v.code)}
+                                title="Copy Code"
+                                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 transition cursor-pointer"
+                              >
+                                {copiedCode === v.code ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleVoucher(v.code)}
+                                title="Delete Voucher"
+                                className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 5: Capture Archive & Offline Queue */}
           {activeTab === 'gallery' && (

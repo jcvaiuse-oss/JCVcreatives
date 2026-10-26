@@ -104,7 +104,35 @@ export class StorageService {
   private memTelemetry = new Map<string, KioskTelemetry>();
 
   constructor() {
+    this.hydrateVouchersFromLocalBackup();
     this.dbPromise = this.initDB();
+  }
+
+  private hydrateVouchersFromLocalBackup(): void {
+    try {
+      const raw = safeStorageGet('jcv_vouchers_backup');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && typeof item.code === 'string') {
+            const code = item.code.toUpperCase();
+            this.memVouchers.set(code, { ...item, code });
+          }
+        }
+      }
+    } catch {
+      // Ignore malformed backup
+    }
+  }
+
+  private syncVouchersToLocalBackup(): void {
+    try {
+      const list = Array.from(this.memVouchers.values());
+      safeStorageSet('jcv_vouchers_backup', JSON.stringify(list));
+    } catch {
+      // Ignore quota errors
+    }
   }
 
   private initDB(): Promise<IDBDatabase | null> {
@@ -243,30 +271,115 @@ export class StorageService {
 
   // --- Vouchers ---
   public async getVoucher(code: string): Promise<Voucher | null> {
-    const key = code.toUpperCase();
+    const key = code.trim().toUpperCase();
+    const memItem = this.memVouchers.get(key) || null;
     const db = await this.dbPromise;
-    if (!db) return this.memVouchers.get(key) || null;
+    if (!db) return memItem;
     return new Promise((resolve) => {
       try {
         const tx = db.transaction('vouchers', 'readonly');
         const req = tx.objectStore('vouchers').get(key);
-        req.onsuccess = () => resolve(req.result || this.memVouchers.get(key) || null);
-        req.onerror = () => resolve(this.memVouchers.get(key) || null);
+        req.onsuccess = () => {
+          const dbItem = req.result as Voucher | undefined;
+          if (dbItem && memItem) {
+            const preferred = (memItem.usedCount ?? 0) >= (dbItem.usedCount ?? 0) ? memItem : dbItem;
+            this.memVouchers.set(key, preferred);
+            resolve(preferred);
+          } else {
+            const found = dbItem || memItem || null;
+            if (found) this.memVouchers.set(key, found);
+            resolve(found);
+          }
+        };
+        req.onerror = () => resolve(memItem);
       } catch {
-        resolve(this.memVouchers.get(key) || null);
+        resolve(memItem);
       }
     });
   }
 
   public async saveVoucher(voucher: Voucher): Promise<void> {
-    const normalized = { ...voucher, code: voucher.code.toUpperCase() };
+    const normalized = { ...voucher, code: voucher.code.trim().toUpperCase() };
     this.memVouchers.set(normalized.code, normalized);
+    this.syncVouchersToLocalBackup();
     const db = await this.dbPromise;
     if (!db) return;
     return new Promise((resolve) => {
       try {
         const tx = db.transaction('vouchers', 'readwrite');
         tx.objectStore('vouchers').put(normalized);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  public async saveVouchersBatch(vouchers: Voucher[]): Promise<void> {
+    if (!vouchers.length) return;
+    const normalizedList = vouchers.map((v) => ({
+      ...v,
+      code: v.code.trim().toUpperCase(),
+    }));
+    for (const item of normalizedList) {
+      this.memVouchers.set(item.code, item);
+    }
+    this.syncVouchersToLocalBackup();
+    const db = await this.dbPromise;
+    if (!db) return;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('vouchers', 'readwrite');
+        const store = tx.objectStore('vouchers');
+        for (const item of normalizedList) {
+          store.put(item);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  public async deleteVoucher(code: string): Promise<void> {
+    const key = code.trim().toUpperCase();
+    this.memVouchers.delete(key);
+    this.syncVouchersToLocalBackup();
+    const db = await this.dbPromise;
+    if (!db) return;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('vouchers', 'readwrite');
+        tx.objectStore('vouchers').delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  public async clearUsedVouchers(): Promise<void> {
+    const all = await this.getAllVouchers();
+    const usedCodes = all
+      .filter((v) => v.maxUses > 0 && v.usedCount >= v.maxUses)
+      .map((v) => v.code.toUpperCase());
+
+    for (const code of usedCodes) {
+      this.memVouchers.delete(code);
+    }
+    this.syncVouchersToLocalBackup();
+    const db = await this.dbPromise;
+    if (!db) return;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('vouchers', 'readwrite');
+        const store = tx.objectStore('vouchers');
+        for (const code of usedCodes) {
+          store.delete(code);
+        }
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       } catch {
@@ -282,7 +395,20 @@ export class StorageService {
       try {
         const tx = db.transaction('vouchers', 'readonly');
         const req = tx.objectStore('vouchers').getAll();
-        req.onsuccess = () => resolve(req.result || Array.from(this.memVouchers.values()));
+        req.onsuccess = () => {
+          const dbItems: Voucher[] = Array.isArray(req.result) ? req.result : [];
+          for (const item of dbItems) {
+            if (item && item.code) {
+              const key = item.code.toUpperCase();
+              const existing = this.memVouchers.get(key);
+              if (!existing || (item.usedCount ?? 0) > (existing.usedCount ?? 0)) {
+                this.memVouchers.set(key, { ...item, code: key });
+              }
+            }
+          }
+          this.syncVouchersToLocalBackup();
+          resolve(Array.from(this.memVouchers.values()));
+        };
         req.onerror = () => resolve(Array.from(this.memVouchers.values()));
       } catch {
         resolve(Array.from(this.memVouchers.values()));

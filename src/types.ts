@@ -114,6 +114,10 @@ export interface Voucher {
   description: string;
   expiresAt: number;
   active: boolean;
+  createdAt?: number;
+  lastUsedAt?: number;
+  batchName?: string;
+  isCashierTicket?: boolean;
 }
 
 export interface PaymentTransaction {

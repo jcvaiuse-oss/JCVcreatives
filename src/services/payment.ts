@@ -47,6 +47,34 @@ const SEEDED_VOUCHERS: Voucher[] = [
   },
 ];
 
+const VOUCHER_CHARSET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+/**
+ * Computes a deterministic single-character checksum for offline cashier voucher verification.
+ */
+function computeVoucherChecksum(payload: string): string {
+  const clean = payload.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  let hash = 29;
+  for (let i = 0; i < clean.length; i++) {
+    hash = (hash * 37 + clean.charCodeAt(i) * (i + 3)) & 0xfffffff;
+  }
+  return VOUCHER_CHARSET[hash % VOUCHER_CHARSET.length];
+}
+
+/**
+ * Verifies if an unknown code matches the JCV offline cashier voucher checksum format (e.g. JCV-XXXXC).
+ */
+function isValidOfflineSignedCashierCode(code: string): boolean {
+  const normalized = code.trim().toUpperCase();
+  const match = normalized.match(/^([A-Z0-9]{2,6})-?([23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{5})$/);
+  if (!match) return false;
+  const prefix = match[1];
+  const bodyWithCheck = match[2];
+  const body = bodyWithCheck.slice(0, 4);
+  const checkChar = bodyWithCheck.slice(4, 5);
+  return computeVoucherChecksum(`${prefix}${body}`) === checkChar;
+}
+
 class PaymentService {
   private initialized = false;
 
@@ -54,11 +82,69 @@ class PaymentService {
     if (this.initialized) return;
     const existing = await storageService.getAllVouchers();
     if (existing.length === 0) {
-      for (const v of SEEDED_VOUCHERS) {
-        await storageService.saveVoucher(v);
-      }
+      await storageService.saveVouchersBatch(SEEDED_VOUCHERS);
     }
     this.initialized = true;
+  }
+
+  /**
+   * Batch generates single-use (or multi-use) cashier vouchers that work 100% offline.
+   */
+  public async generateCashierVouchersBatch(options: {
+    count: number;
+    prefix?: string;
+    discountPercent?: number;
+    maxUses?: number;
+    batchName?: string;
+    expiryDays?: number;
+  }): Promise<Voucher[]> {
+    await this.initVouchers();
+    const count = Math.max(1, Math.min(500, Math.floor(options.count || 1)));
+    const rawPrefix = (options.prefix || 'JCV').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const prefix = rawPrefix.slice(0, 6) || 'JCV';
+    const discountPercent = options.discountPercent ?? 100;
+    const maxUses = options.maxUses ?? 1;
+    const expiryDays = options.expiryDays ?? 365;
+    const now = Date.now();
+    const batchName =
+      options.batchName?.trim() ||
+      `Cashier Batch (${new Date(now).toLocaleDateString([], { month: 'short', day: 'numeric' })})`;
+
+    const existingList = await storageService.getAllVouchers();
+    const existingCodes = new Set(existingList.map((v) => v.code.toUpperCase()));
+
+    const generated: Voucher[] = [];
+    let attempts = 0;
+
+    while (generated.length < count && attempts < count * 20) {
+      attempts++;
+      let randPart = '';
+      for (let i = 0; i < 4; i++) {
+        const idx = Math.floor(Math.random() * VOUCHER_CHARSET.length);
+        randPart += VOUCHER_CHARSET[idx];
+      }
+      const checkChar = computeVoucherChecksum(`${prefix}${randPart}`);
+      const fullCode = `${prefix}-${randPart}${checkChar}`;
+
+      if (!existingCodes.has(fullCode)) {
+        existingCodes.add(fullCode);
+        generated.push({
+          code: fullCode,
+          discountPercent,
+          maxUses,
+          usedCount: 0,
+          description: batchName,
+          expiresAt: now + expiryDays * 24 * 60 * 60 * 1000,
+          active: true,
+          createdAt: now,
+          batchName,
+          isCashierTicket: true,
+        });
+      }
+    }
+
+    await storageService.saveVouchersBatch(generated);
+    return generated;
   }
 
   /**
@@ -95,7 +181,7 @@ class PaymentService {
   }
 
   /**
-   * Validate and consume a voucher code
+   * Validate and consume a voucher code (supports exact match, dash-omitted match, and offline signed cashier codes)
    */
   public async redeemVoucher(
     code: string,
@@ -103,7 +189,41 @@ class PaymentService {
   ): Promise<{ success: boolean; discountPercent: number; message: string; transaction?: PaymentTransaction }> {
     await this.initVouchers();
     const cleanCode = code.trim().toUpperCase();
-    const voucher = await storageService.getVoucher(cleanCode);
+    let voucher = await storageService.getVoucher(cleanCode);
+
+    // If customer typed code without hyphen (e.g. JCV4829K instead of JCV-4829K), find matching stored voucher
+    if (!voucher) {
+      const strippedInput = cleanCode.replace(/[^A-Z0-9]/g, '');
+      const allVouchers = await storageService.getAllVouchers();
+      const matched = allVouchers.find(
+        (v) => v.code.replace(/[^A-Z0-9]/g, '').toUpperCase() === strippedInput
+      );
+      if (matched) {
+        voucher = matched;
+      }
+    }
+
+    // If still not in local storage, check if it is a valid offline-signed cashier voucher generated on another station
+    if (!voucher && isValidOfflineSignedCashierCode(cleanCode)) {
+      const m = cleanCode.match(/^([A-Z0-9]{2,6})-?([23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{5})$/);
+      const canonicalCode = m ? `${m[1]}-${m[2]}` : cleanCode;
+      const existingCanonical = await storageService.getVoucher(canonicalCode);
+      if (existingCanonical) {
+        voucher = existingCanonical;
+      } else {
+        voucher = {
+          code: canonicalCode,
+          discountPercent: 100,
+          maxUses: 1,
+          usedCount: 0,
+          description: 'Cashier Paid Session Voucher',
+          expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+          active: true,
+          createdAt: Date.now(),
+          isCashierTicket: true,
+        };
+      }
+    }
 
     if (!voucher) {
       return { success: false, discountPercent: 0, message: 'Invalid voucher code. Please check and try again.' };
@@ -118,11 +238,16 @@ class PaymentService {
     }
 
     if (voucher.maxUses > 0 && voucher.usedCount >= voucher.maxUses) {
-      return { success: false, discountPercent: 0, message: 'This voucher has reached its maximum redemptions.' };
+      return {
+        success: false,
+        discountPercent: 0,
+        message: 'This voucher code has already been used.',
+      };
     }
 
-    // Update voucher usage count
+    // Update voucher usage count & timestamp
     voucher.usedCount += 1;
+    voucher.lastUsedAt = Date.now();
     await storageService.saveVoucher(voucher);
 
     // Record transaction
