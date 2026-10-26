@@ -9,7 +9,6 @@ import {
   ArrowRight,
   ArrowLeft,
   Camera,
-  FlipHorizontal,
   Minus,
   Plus,
   Ticket,
@@ -116,12 +115,11 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
   onBack,
 }) => {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [facingMode] = useState<'user' | 'environment'>('user');
   const [copies, setCopies] = useState<number>(1);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Initialize camera for live preview above
+  // Initialize camera for live preview inside layout cards
   useEffect(() => {
     let isMounted = true;
 
@@ -147,10 +145,8 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
 
         mediaStreamRef.current = stream;
         setCameraStream(stream);
-        setCameraActive(true);
       } catch {
-        if (!isMounted) return;
-        setCameraActive(false);
+        // Camera fallback handled by MiniLiveVideo
       }
     }
 
@@ -164,11 +160,6 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
       }
     };
   }, [facingMode]);
-
-  const toggleCameraFacing = () => {
-    soundEffects.playTap();
-    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
-  };
 
   const handleContinue = () => {
     soundEffects.playTap();
@@ -193,8 +184,8 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 max-w-xl mx-auto w-full select-none text-zinc-900 overflow-y-auto">
-      {/* Top Header matching Still 44fabe33.jpeg */}
-      <div className="flex items-center justify-between pb-3">
+      {/* Top Header */}
+      <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-2">
           <button
             onClick={handleBack}
@@ -215,44 +206,6 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
         <div className="text-right text-[11px] font-serif italic text-zinc-500 leading-tight">
           Same Moments<br />Brighter Days ♡
         </div>
-      </div>
-
-      {/* Camera Live Preview Check Above (requested by user) */}
-      <div className="relative w-full aspect-16/9 sm:aspect-2/1 rounded-2xl overflow-hidden bg-zinc-100 border border-zinc-200/90 shadow-xs mb-4 flex items-center justify-center">
-        {cameraActive && cameraStream ? (
-          <video
-            ref={(el) => {
-              if (el && el.srcObject !== cameraStream) {
-                el.srcObject = cameraStream;
-                el.play().catch(() => {});
-              }
-            }}
-            autoPlay
-            playsInline
-            muted
-            className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
-          />
-        ) : (
-          <div className="flex flex-col items-center justify-center text-zinc-400 gap-1.5">
-            <Camera className="w-6 h-6 opacity-40 text-zinc-700" />
-            <span className="text-xs text-zinc-600 font-medium">Camera Preview</span>
-          </div>
-        )}
-
-        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-md text-[10px] font-medium text-zinc-700 shadow-xs">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Mirror Check</span>
-        </div>
-
-        {cameraActive && (
-          <button
-            onClick={toggleCameraFacing}
-            title="Flip Camera"
-            className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-white/90 backdrop-blur-md border border-zinc-200 text-zinc-700 hover:text-black transition cursor-pointer"
-          >
-            <FlipHorizontal className="w-3.5 h-3.5" />
-          </button>
-        )}
       </div>
 
       {/* Title & Subtitle */}
