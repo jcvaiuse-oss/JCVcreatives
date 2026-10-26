@@ -12,9 +12,15 @@ import {
   Minimize,
   Battery,
   Scroll,
+  Download,
 } from 'lucide-react';
 import { ScreenState, KioskTelemetry, RemoteKioskConfig } from '../types';
 import { soundEffects } from '../services/soundEffects';
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
 
 interface KioskNavBarProps {
   currentScreen: ScreenState;
@@ -35,6 +41,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [timeStr, setTimeStr] = useState('');
   const [secretTapCount, setSecretTapCount] = useState(0);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
     if (secretTapCount === 0) return;
@@ -55,9 +63,31 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   }, [onRequestAdmin]);
 
   useEffect(() => {
+    try {
+      const isStandalone =
+        (typeof window.matchMedia === 'function' &&
+          window.matchMedia('(display-mode: standalone)').matches) ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+      setIsInstalled(isStandalone);
+    } catch {
+      // ignore
+    }
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    };
+
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
@@ -78,6 +108,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     document.addEventListener('webkitfullscreenchange', fsChange);
 
     return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
@@ -85,6 +117,17 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       document.removeEventListener('webkitfullscreenchange', fsChange);
     };
   }, []);
+
+  const handleInstallApp = async () => {
+    soundEffects.playTap();
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    }
+  };
 
   const toggleFullscreen = () => {
     soundEffects.playTap();
@@ -175,9 +218,9 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
           <span>Paper {telemetry.paperRemainingPercent}%</span>
         </div>
 
-        {/* Online / Offline badge */}
+        {/* Online / Offline Ready badge */}
         <div
-          title={isOnline ? 'Online Cloud Sync Active' : 'Offline Mode Active'}
+          title={isOnline ? 'Online & Cached for Offline Use' : 'Offline Mode Active — Working Locally'}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-200 bg-zinc-50 text-zinc-600 text-[11px]"
         >
           {isOnline ? (
@@ -187,8 +230,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             </>
           ) : (
             <>
-              <WifiOff className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Offline</span>
+              <WifiOff className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Offline Ready</span>
             </>
           )}
         </div>
@@ -205,12 +248,23 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         <span className="hidden sm:inline font-mono text-[11px] text-zinc-500">{timeStr}</span>
       </div>
 
-      {/* Right Controls: Fullscreen (Admin button hidden by default unless enabled in settings) */}
+      {/* Right Controls: Install App + Fullscreen + Optional Admin */}
       <div className="flex items-center gap-1.5">
+        {!isInstalled && deferredPrompt && (
+          <button
+            onClick={handleInstallApp}
+            title="Install Offline App"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black hover:bg-zinc-800 text-white text-[11px] font-medium transition cursor-pointer"
+          >
+            <Download className="w-3 h-3" />
+            <span className="hidden sm:inline">Install App</span>
+          </button>
+        )}
+
         <button
           onClick={toggleFullscreen}
           title="Toggle Fullscreen"
-          className="p-1.5 rounded-lg border border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 transition"
+          className="p-1.5 rounded-lg border border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 transition cursor-pointer"
         >
           {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
         </button>
@@ -222,7 +276,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
               onRequestAdmin();
             }}
             title="Admin Settings & Kiosk Diagnostics"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
               currentScreen === 'admin'
                 ? 'bg-black text-white border-black font-medium'
                 : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
@@ -236,3 +290,4 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     </header>
   );
 };
+

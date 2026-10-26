@@ -1,28 +1,31 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
 // Signal to standalone/WebView bootstrapper that React bundle has started mounting
 (window as unknown as { __JCV_MOUNTED__?: boolean }).__JCV_MOUNTED__ = true;
 
-// Safely clean up any stale service workers on restricted/sandboxed origins
+// Register Service Worker for 100% offline web and installed PWA operation
 try {
   if (
     typeof navigator !== 'undefined' &&
     'serviceWorker' in navigator &&
-    (window.location.hostname.includes('googleusercontent.com') ||
-      window.location.protocol === 'file:' ||
-      window.location.protocol === 'content:')
+    (window.location.protocol === 'https:' || window.location.hostname === 'localhost') &&
+    !window.location.hostname.includes('googleusercontent.com')
   ) {
-    navigator.serviceWorker
-      .getRegistrations()
-      .then((regs) => regs.forEach((r) => r.unregister()))
-      .catch(() => {});
+    registerSW({
+      immediate: true,
+      onOfflineReady() {
+        window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
+      },
+    });
   }
 } catch {
   // Ignore SecurityError in Android WebView or sandboxed iframe
 }
+
 
 class KioskErrorBoundary extends React.Component<
   { children: React.ReactNode },

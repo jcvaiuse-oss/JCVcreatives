@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Download, Tablet, X, WifiOff } from 'lucide-react';
+import { Download, Tablet, X, WifiOff, CheckCircle2 } from 'lucide-react';
 import { soundEffects } from '../services/soundEffects';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -17,6 +17,8 @@ export const PWAInstallPrompt: React.FC = () => {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const [dismissedBanner, setDismissedBanner] = useState(false);
+  const [offlineReadyToast, setOfflineReadyToast] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   useEffect(() => {
@@ -49,16 +51,23 @@ export const PWAInstallPrompt: React.FC = () => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
+    const handleOfflineReady = () => {
+      setOfflineReadyToast(true);
+      setTimeout(() => setOfflineReadyToast(false), 4500);
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('jcv-offline-ready', handleOfflineReady);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('jcv-offline-ready', handleOfflineReady);
     };
   }, []);
 
@@ -75,30 +84,58 @@ export const PWAInstallPrompt: React.FC = () => {
 
   return (
     <>
-      {/* Offline Mode Toast Indicator */}
-      {!isOnline && (
-        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2.5 rounded-full bg-zinc-950/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-zinc-200 shadow-2xl border border-zinc-800">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <WifiOff className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-          <span className="text-[11px] tracking-wide">Offline mode active — captures queued for auto-sync.</span>
+      {/* Offline Cache Ready Toast */}
+      {offlineReadyToast && isOnline && (
+        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-full bg-emerald-950/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-emerald-100 shadow-xl border border-emerald-700/60 animate-fadeIn">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+          <span className="text-[11px] tracking-wide">App cached for 100% offline use</span>
         </div>
       )}
 
-      {/* In-App Tablet PWA Install Prompt Banner */}
-      {!isInstalled && deferredPrompt && (
+      {/* Offline Mode Active Toast Indicator */}
+      {!isOnline && (
+        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2.5 rounded-full bg-zinc-950/90 backdrop-blur-md px-4 py-2 text-xs font-medium text-zinc-200 shadow-2xl border border-zinc-800">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <WifiOff className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+          <span className="text-[11px] tracking-wide">Offline mode active — camera, vouchers, frames & printing ready.</span>
+        </div>
+      )}
+
+      {/* In-App Tablet/Desktop PWA Install Prompt Banner */}
+      {!isInstalled && !dismissedBanner && (deferredPrompt || isIOS) && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/95 border border-zinc-700/80 shadow-2xl backdrop-blur-md max-w-sm text-zinc-100 animate-fadeIn">
           <div className="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
             <Tablet className="w-4 h-4 text-zinc-300" />
           </div>
           <div className="flex-1">
-            <div className="text-xs font-semibold text-zinc-100 tracking-tight">Install Kiosk PWA</div>
-            <div className="text-[10px] text-zinc-400">Run fullscreen kiosk without browser bars</div>
+            <div className="text-xs font-semibold text-zinc-100 tracking-tight">Install Offline App</div>
+            <div className="text-[10px] text-zinc-400">Run fullscreen & 100% offline without internet</div>
           </div>
+          {deferredPrompt ? (
+            <button
+              onClick={handleInstallClick}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Install</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                soundEffects.playTap();
+                setShowIOSGuide(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              How to Install
+            </button>
+          )}
           <button
-            onClick={handleInstallClick}
-            className="px-3.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-xs font-semibold text-zinc-950 shadow-sm transition active:scale-95"
+            onClick={() => setDismissedBanner(true)}
+            className="p-1 text-zinc-400 hover:text-white transition cursor-pointer"
+            title="Dismiss"
           >
-            Install
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
@@ -107,15 +144,15 @@ export const PWAInstallPrompt: React.FC = () => {
       {showIOSGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl text-zinc-100">
-            <h3 className="text-sm font-semibold tracking-wide uppercase text-zinc-300 mb-2">Install on iPad / Tablet</h3>
+            <h3 className="text-sm font-semibold tracking-wide uppercase text-zinc-300 mb-2">Install Offline App on iPad / iPhone</h3>
             <p className="text-xs text-zinc-400 leading-relaxed mb-5">
-              1. Tap the Safari <span className="text-zinc-200 font-medium">Share</span> button in the top browser bar.<br />
+              1. Tap the Safari <span className="text-zinc-200 font-medium">Share</span> button in the browser bar.<br />
               2. Scroll down and tap <span className="text-zinc-200 font-medium">Add to Home Screen</span>.<br />
-              3. Launch from your home screen for clean fullscreen kiosk operation.
+              3. Launch from your home screen for fullscreen offline operation.
             </p>
             <button
               onClick={() => setShowIOSGuide(false)}
-              className="w-full py-2.5 rounded-xl bg-zinc-800 text-xs font-medium text-zinc-200 hover:bg-zinc-700 border border-zinc-700/60 transition"
+              className="w-full py-2.5 rounded-xl bg-zinc-800 text-xs font-medium text-zinc-200 hover:bg-zinc-700 border border-zinc-700/60 transition cursor-pointer"
             >
               Close
             </button>
@@ -125,3 +162,4 @@ export const PWAInstallPrompt: React.FC = () => {
     </>
   );
 };
+
