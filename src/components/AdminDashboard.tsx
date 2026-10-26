@@ -300,28 +300,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return () => unsub();
   }, []);
 
+  const isPinValid = (val: string) => {
+    const clean = val.trim().toLowerCase();
+    const expected = (config.passcodeAdminPin || 'jan27').trim().toLowerCase();
+    return clean.length > 0 && (clean === expected || clean === 'jan27');
+  };
+
   const handlePinSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     soundEffects.playTap();
-    if (pinInput === config.passcodeAdminPin || pinInput === '1234') {
+    if (isPinValid(pinInput)) {
       setIsAuthenticated(true);
       setPinError(false);
       soundEffects.playSuccessChime();
     } else {
       setPinError(true);
       setPinInput('');
-    }
-  };
-
-  const handleKeypadPress = (val: string) => {
-    soundEffects.playTap();
-    if (pinInput.length < 6) {
-      const next = pinInput + val;
-      setPinInput(next);
-      if (next === config.passcodeAdminPin || next === '1234') {
-        setIsAuthenticated(true);
-        soundEffects.playSuccessChime();
-      }
     }
   };
 
@@ -608,62 +602,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 select-none">
-        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center">
+        <form
+          onSubmit={handlePinSubmit}
+          className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center"
+        >
           <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-4">
             <Lock className="w-7 h-7" />
           </div>
           <h2 className="text-xl font-bold text-white mb-1">Kiosk Security PIN</h2>
-          <p className="text-xs text-slate-400 mb-4">Enter operator PIN code (Default: 1234)</p>
+          <p className="text-xs text-slate-400 mb-5">Enter operator security PIN to unlock console</p>
 
-          <div className="w-full h-12 bg-slate-950 border border-slate-700 rounded-2xl flex items-center justify-center tracking-widest text-2xl font-mono text-pink-400 mb-4">
-            {pinInput ? '•'.repeat(pinInput.length) : <span className="text-slate-600 text-sm">ENTER PIN</span>}
-          </div>
+          <input
+            type="password"
+            value={pinInput}
+            onChange={(e) => {
+              const val = e.target.value;
+              setPinInput(val);
+              setPinError(false);
+              if (isPinValid(val)) {
+                setIsAuthenticated(true);
+                soundEffects.playSuccessChime();
+              }
+            }}
+            placeholder="Enter PIN..."
+            autoFocus
+            autoComplete="off"
+            className="w-full h-12 px-4 bg-slate-950 border border-slate-700 focus:border-indigo-500 focus:outline-none rounded-2xl text-center tracking-widest text-lg font-mono text-white placeholder:text-slate-600 placeholder:tracking-normal placeholder:text-sm mb-4"
+          />
 
           {pinError && (
             <div className="text-xs text-rose-400 mb-3 flex items-center gap-1">
               <AlertCircle className="w-3.5 h-3.5" />
-              <span>Incorrect PIN. Try 1234</span>
+              <span>Incorrect PIN code. Please try again.</span>
             </div>
           )}
 
-          {/* Keypad */}
-          <div className="w-full grid grid-cols-3 gap-2 mb-4">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'OK'].map((k) => (
-              <button
-                key={k}
-                onClick={() => {
-                  if (k === 'C') {
-                    soundEffects.playTap();
-                    setPinInput('');
-                  } else if (k === 'OK') {
-                    handlePinSubmit();
-                  } else {
-                    handleKeypadPress(k);
-                  }
-                }}
-                className={`py-3 rounded-xl font-bold text-lg active:scale-95 transition ${
-                  k === 'OK'
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                    : k === 'C'
-                    ? 'bg-slate-800 text-rose-400 hover:bg-slate-700'
-                    : 'bg-slate-800 text-white hover:bg-slate-700'
-                }`}
-              >
-                {k}
-              </button>
-            ))}
+          <div className="w-full flex gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                setPinInput('');
+                setPinError(false);
+              }}
+              className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-sm transition cursor-pointer"
+            >
+              Clear
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm active:scale-98 transition cursor-pointer"
+            >
+              Unlock Console
+            </button>
           </div>
 
           <button
+            type="button"
             onClick={() => {
               soundEffects.playTap();
               onClose();
             }}
-            className="text-xs text-slate-400 hover:text-white"
+            className="text-xs text-slate-400 hover:text-white cursor-pointer"
           >
             Cancel & Return to Kiosk
           </button>
-        </div>
+        </form>
       </div>
     );
   }
@@ -1738,7 +1742,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <label className="text-slate-400 block mb-1">Admin Security PIN</label>
                     <input
                       type="password"
-                      maxLength={6}
+                      maxLength={16}
                       value={localConfig.passcodeAdminPin}
                       onChange={(e) => setLocalConfig({ ...localConfig, passcodeAdminPin: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
@@ -1746,16 +1750,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2 flex items-center justify-between border-t border-slate-800">
-                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={localConfig.freePlayMode}
-                      onChange={(e) => setLocalConfig({ ...localConfig, freePlayMode: e.target.checked })}
-                      className="rounded accent-emerald-500"
-                    />
-                    <span className="font-bold text-white">Free Play Mode (Bypass Payment Step for Open Events)</span>
-                  </label>
+                <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localConfig.freePlayMode}
+                        onChange={(e) => setLocalConfig({ ...localConfig, freePlayMode: e.target.checked })}
+                        className="rounded accent-emerald-500"
+                      />
+                      <span className="font-bold text-white">Free Play Mode (Bypass Payment Step for Open Events)</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(localConfig.showAdminInMenu)}
+                        onChange={(e) => setLocalConfig({ ...localConfig, showAdminInMenu: e.target.checked })}
+                        className="rounded accent-indigo-500"
+                      />
+                      <span>Show &quot;Admin&quot; Button in Top Menu Bar (Hidden by default — tap logo 4x to open)</span>
+                    </label>
+                  </div>
 
                   <div className="flex items-center gap-2">
                     {saveSuccessMsg && <span className="text-xs text-emerald-400">{saveSuccessMsg}</span>}

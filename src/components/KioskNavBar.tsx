@@ -34,6 +34,25 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [timeStr, setTimeStr] = useState('');
+  const [secretTapCount, setSecretTapCount] = useState(0);
+
+  useEffect(() => {
+    if (secretTapCount === 0) return;
+    const timer = setTimeout(() => setSecretTapCount(0), 2500);
+    return () => clearTimeout(timer);
+  }, [secretTapCount]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        soundEffects.playTap();
+        onRequestAdmin();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onRequestAdmin]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -106,12 +125,21 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
 
   return (
     <header className="w-full bg-white/95 backdrop-blur-md border-b border-zinc-200 text-zinc-700 px-4 py-2.5 flex items-center justify-between text-xs select-none z-40">
-      {/* Left: Kiosk Info & Minimalist Branding */}
+      {/* Left: Kiosk Info & Minimalist Branding (4 rapid taps opens hidden Admin PIN prompt) */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => {
             soundEffects.playTap();
-            onNavigateScreen('attract');
+            const next = secretTapCount + 1;
+            if (next >= 4) {
+              setSecretTapCount(0);
+              onRequestAdmin();
+              return;
+            }
+            setSecretTapCount(next);
+            if (currentScreen !== 'attract') {
+              onNavigateScreen('attract');
+            }
           }}
           className="flex items-center gap-2.5 text-zinc-900 hover:opacity-80 transition tracking-wider cursor-pointer"
         >
@@ -177,9 +205,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         <span className="hidden sm:inline font-mono text-[11px] text-zinc-500">{timeStr}</span>
       </div>
 
-      {/* Right Controls: Fullscreen, Admin */}
+      {/* Right Controls: Fullscreen (Admin button hidden by default unless enabled in settings) */}
       <div className="flex items-center gap-1.5">
-
         <button
           onClick={toggleFullscreen}
           title="Toggle Fullscreen"
@@ -188,21 +215,23 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
           {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
         </button>
 
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            onRequestAdmin();
-          }}
-          title="Admin Settings & Kiosk Diagnostics"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-            currentScreen === 'admin'
-              ? 'bg-black text-white border-black font-medium'
-              : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
-          }`}
-        >
-          <Sliders className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Admin</span>
-        </button>
+        {config.showAdminInMenu && (
+          <button
+            onClick={() => {
+              soundEffects.playTap();
+              onRequestAdmin();
+            }}
+            title="Admin Settings & Kiosk Diagnostics"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+              currentScreen === 'admin'
+                ? 'bg-black text-white border-black font-medium'
+                : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Admin</span>
+          </button>
+        )}
       </div>
     </header>
   );

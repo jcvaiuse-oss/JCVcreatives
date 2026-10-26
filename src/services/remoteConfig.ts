@@ -16,7 +16,8 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   pricePerSession: 150.0,
   currencySymbol: '₱',
   freePlayMode: false,
-  passcodeAdminPin: '1234',
+  passcodeAdminPin: 'jan27',
+  showAdminInMenu: false,
   allowedLayouts: ['strip_3', 'grid_4', 'single_polaroid', 'strip_4'],
   thermalPrinter: {
     connectionType: 'virtual',
@@ -54,12 +55,25 @@ class RemoteConfigService {
     const saved = await storageService.getConfig();
     if (saved) {
       this.config = { ...DEFAULT_CONFIG, ...saved };
+      let needsSave = false;
       // Ensure currency is updated to Pesos if previously saved as $
       if (this.config.currencySymbol === '$') {
         this.config.currencySymbol = '₱';
         if (this.config.pricePerSession === 5.0) {
           this.config.pricePerSession = 150.0;
         }
+        needsSave = true;
+      }
+      // Migrate legacy default PIN '1234' to 'jan27'
+      if (!this.config.passcodeAdminPin || this.config.passcodeAdminPin === '1234') {
+        this.config.passcodeAdminPin = 'jan27';
+        needsSave = true;
+      }
+      if (this.config.showAdminInMenu === undefined) {
+        this.config.showAdminInMenu = false;
+        needsSave = true;
+      }
+      if (needsSave) {
         await storageService.saveConfig(this.config);
       }
     } else {

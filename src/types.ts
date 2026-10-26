@@ -194,6 +194,7 @@ export interface RemoteKioskConfig {
   currencySymbol: string;
   freePlayMode: boolean;
   passcodeAdminPin: string;
+  showAdminInMenu?: boolean;
   allowedLayouts: FrameLayoutType[];
   thermalPrinter: ThermalPrinterConfig;
   customWatermarkUrl?: string;
