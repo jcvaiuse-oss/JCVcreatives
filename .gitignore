@@ -6,6 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
--e 
 .aistudio/
-public/assets/aistudio/
+public/assets/aistudio/*.PNG
+public/assets/aistudio/*.jpeg

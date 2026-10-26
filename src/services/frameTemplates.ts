@@ -124,6 +124,18 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
     footerText: 'MEMORABLE MOMENTS • POP THE BUBBLY',
     dateVisible: true,
   },
+  {
+    id: 'thermal_gobble_haus',
+    name: 'Gobble Haus Receipt',
+    category: 'holiday',
+    background: '#ffffff',
+    borderStyle: 'airmail_border',
+    textColor: '#000000',
+    accentColor: '#000000',
+    headerText: 'GOBBLE HAUS • ORDER #01',
+    footerText: 'ALL-DAY SILOG & RICE BOXES • HOT & FRESH',
+    dateVisible: true,
+  },
 ];
 
 /**
@@ -132,6 +144,19 @@ export const THERMAL_FRAME_THEMES: FrameTheme[] = [
  * smartphone via QR code or receiving via email.
  */
 export const DIGITAL_COLOR_THEMES: FrameTheme[] = [
+  {
+    id: 'gobble_haus_special',
+    name: 'Gobble Haus Diner',
+    category: 'holiday',
+    background: '#fffbeb',
+    borderStyle: 'double_gold',
+    textColor: '#7c2d12',
+    accentColor: '#ea580c',
+    headerText: 'GOBBLE HAUS RICE BOXES',
+    footerText: 'SIZZLING SILOG • GARLIC RICE & EGG',
+    dateVisible: true,
+    cornerIcon: '🍱',
+  },
   {
     id: 'baby_blue_studio',
     name: 'Baby Blue Chic',

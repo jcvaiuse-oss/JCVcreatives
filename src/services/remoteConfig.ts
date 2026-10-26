@@ -9,7 +9,7 @@ import { storageService } from './storage';
 export const DEFAULT_CONFIG: RemoteKioskConfig = {
   kioskId: 'JCVcreatives-01',
   locationName: 'JCVcreatives Studio',
-  eventTitle: 'JCVcreatives',
+  eventTitle: 'JCVcreatives Photobooth',
   eventSubtitle: 'Archival Portrait & Thermal Print',
   eventDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
   eventHashtag: '#JCVcreatives',

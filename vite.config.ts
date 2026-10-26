@@ -16,8 +16,8 @@ export default defineConfig(() => {
         includeAssets: ['icon.svg'],
         manifest: {
           id: './',
-          name: 'JCVcreatives Photo Booth Studio',
-          short_name: 'JCVcreatives',
+          name: 'JCVcreatives Photobooth',
+          short_name: 'JCVcreatives Photobooth',
           description: 'Android tablet photo booth kiosk with thermal printing and instant sharing',
           theme_color: '#faf8f5',
           background_color: '#faf8f5',
@@ -42,7 +42,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          globIgnores: ['**/downloads/**', '**/assets/aistudio/**'],
+          globIgnores: ['**/downloads/**', '**/assets/aistudio/*.PNG', '**/assets/aistudio/*.jpeg'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         },
         devOptions: {

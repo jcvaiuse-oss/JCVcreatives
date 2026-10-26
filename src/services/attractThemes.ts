@@ -6,6 +6,7 @@
 import { safeStorageGet, safeStorageSet } from './storage';
 
 export type AttractOccasionId =
+  | 'gobble_haus'
   | 'default'
   | 'wedding'
   | 'birthday'
@@ -18,6 +19,8 @@ export type AttractOccasionId =
   | 'retro_disco';
 
 export type StickerAnimationType =
+  | 'food_drop'          // Cascading & bouncing rice-box food sticker drop
+  | 'food_land'          // Dropping in with a spring bounce & gentle wiggle
   | 'disco_ball_shine'   // Spinning disco ball 🪩 with radiant shining rays ✨
   | 'clown_wiggle'       // Moving / wiggling clown 🤡
   | 'cake_with_candle'   // Birthday cake 🎂 with flickering candle flame 🔥 on top
@@ -31,12 +34,57 @@ export type StickerAnimationType =
 export interface AnimatedStickerItem {
   id: string;
   emoji: string;
+  imageUrl?: string;
+  label?: string;
   animation: StickerAnimationType;
   positionClass: string;
   sizeClass: string;
   delayMs?: number;
   durationMs?: number;
 }
+
+export const GOBBLE_HAUS_STICKER_ASSETS = [
+  {
+    id: 'gh-01',
+    name: 'Shredded Beef & Egg',
+    url: '/assets/aistudio/01_shredded_beef_and_egg_883d5ffc.png',
+  },
+  {
+    id: 'gh-02',
+    name: 'Tapa & Garlic Rice',
+    url: '/assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
+  },
+  {
+    id: 'gh-03',
+    name: 'Hotdogs & Scrambled Egg',
+    url: '/assets/aistudio/03_hotdogs_and_scrambled_egg_28f526aa.png',
+  },
+  {
+    id: 'gh-05',
+    name: 'Diced Hotdogs & Egg',
+    url: '/assets/aistudio/05_diced_hotdogs_and_egg_44d5a234.png',
+  },
+  {
+    id: 'gh-06',
+    name: 'Beef & Egg Rice',
+    url: '/assets/aistudio/06_beef_and_egg_rice_062af470.png',
+  },
+  {
+    id: 'gh-07',
+    name: 'Luncheon Meat Rice',
+    url: '/assets/aistudio/07_luncheon_meat_rice_8770438d.png',
+  },
+  {
+    id: 'gh-08',
+    name: 'Beef & Scrambled Egg',
+    url: '/assets/aistudio/08_beef_and_scrambled_egg_177c915a.png',
+  },
+  {
+    id: 'gh-09',
+    name: 'Creamy Chicken & Egg Rice',
+    url: '/assets/aistudio/09_creamy_chicken_and_egg_rice_bfe9e7b2.png',
+  },
+];
 
 export interface AttractOccasionTheme {
   id: AttractOccasionId;
@@ -72,15 +120,18 @@ export interface AttractOccasionTheme {
   leftStripHeader: string;
   leftStripFooter: string;
   leftCornerSticker?: string;
+  leftCornerStickerImage?: string;
   leftCornerAnimClass?: string;
   centerPolaroidHeader: string;
   centerPolaroidCaption: string;
   centerPolaroidCaptionClass: string;
   centerCornerBadge?: string;
+  centerCornerBadgeImage?: string;
   centerCornerAnimClass?: string;
   rightStripHeader: string;
   rightStripFooter: string;
   rightCornerSticker?: string;
+  rightCornerStickerImage?: string;
   rightCornerAnimClass?: string;
 
   // Envelope Pocket Style
@@ -106,7 +157,192 @@ export interface AttractOccasionTheme {
 }
 
 export const ATTRACT_OCCASION_THEMES: AttractOccasionTheme[] = [
-  // 1. DEFAULT — Classic Minimalist Studio (Current Default)
+  // 0. GOBBLE HAUS — Signature Rice Box Restaurant Theme with Dropping Food Stickers
+  {
+    id: 'gobble_haus',
+    name: 'Gobble Haus',
+    shortLabel: 'Gobble Haus',
+    emoji: '🥡',
+    description: 'Signature Gobble Haus restaurant theme with animated dropping rice-box stickers, warm kraft takeout styling, and savory gold accents.',
+    isDark: false,
+    screenBgClass: 'bg-gradient-to-b from-[#fffbf2] via-[#fdf3e1] to-[#f5e1be] text-[#2c1a0e]',
+    floatingSymbols: ['🥡', '🍳', '🍚', '🥩', '🥢', '✨'],
+    floatingOpacityClass: 'opacity-100',
+    animatedStickers: [
+      // All 8 Gobble Haus Rice Box Stickers cascading and dropping across the home screen
+      {
+        id: 'gh-drop-1',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/01_shredded_beef_and_egg_883d5ffc.png',
+        label: 'Shredded Beef & Egg',
+        animation: 'food_drop',
+        positionClass: 'left-[3%] sm:left-[5%] top-0',
+        sizeClass: 'w-16 h-16 sm:w-22 sm:h-22',
+        delayMs: 0,
+        durationMs: 6800,
+      },
+      {
+        id: 'gh-drop-2',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
+        label: 'Tapa & Garlic Rice',
+        animation: 'food_drop',
+        positionClass: 'left-[14%] sm:left-[16%] top-0',
+        sizeClass: 'w-15 h-15 sm:w-20 sm:h-20',
+        delayMs: 1700,
+        durationMs: 7400,
+      },
+      {
+        id: 'gh-drop-3',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/03_hotdogs_and_scrambled_egg_28f526aa.png',
+        label: 'Hotdogs & Scrambled Egg',
+        animation: 'food_drop',
+        positionClass: 'left-[25%] sm:left-[27%] top-0',
+        sizeClass: 'w-14 h-14 sm:w-18 sm:h-18',
+        delayMs: 3400,
+        durationMs: 7000,
+      },
+      {
+        id: 'gh-drop-4',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/05_diced_hotdogs_and_egg_44d5a234.png',
+        label: 'Diced Hotdogs & Egg',
+        animation: 'food_drop',
+        positionClass: 'left-[36%] top-0',
+        sizeClass: 'w-15 h-15 sm:w-20 sm:h-20',
+        delayMs: 5100,
+        durationMs: 7600,
+      },
+      {
+        id: 'gh-drop-5',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/06_beef_and_egg_rice_062af470.png',
+        label: 'Beef & Egg Rice',
+        animation: 'food_drop',
+        positionClass: 'right-[36%] top-0',
+        sizeClass: 'w-15 h-15 sm:w-20 sm:h-20',
+        delayMs: 900,
+        durationMs: 7200,
+      },
+      {
+        id: 'gh-drop-6',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/07_luncheon_meat_rice_8770438d.png',
+        label: 'Luncheon Meat Rice',
+        animation: 'food_drop',
+        positionClass: 'right-[25%] sm:right-[27%] top-0',
+        sizeClass: 'w-14 h-14 sm:w-18 sm:h-18',
+        delayMs: 2600,
+        durationMs: 6900,
+      },
+      {
+        id: 'gh-drop-7',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/08_beef_and_scrambled_egg_177c915a.png',
+        label: 'Beef & Scrambled Egg',
+        animation: 'food_drop',
+        positionClass: 'right-[14%] sm:right-[16%] top-0',
+        sizeClass: 'w-15 h-15 sm:w-20 sm:h-20',
+        delayMs: 4300,
+        durationMs: 7500,
+      },
+      {
+        id: 'gh-drop-8',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/09_creamy_chicken_and_egg_rice_bfe9e7b2.png',
+        label: 'Creamy Chicken & Egg Rice',
+        animation: 'food_drop',
+        positionClass: 'right-[3%] sm:right-[5%] top-0',
+        sizeClass: 'w-16 h-16 sm:w-22 sm:h-22',
+        delayMs: 5900,
+        durationMs: 7100,
+      },
+      // Featured bouncing rice-box stickers anchored on the sides of the home screen
+      {
+        id: 'gh-land-tl',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/02_tapa_and_garlic_rice_77785a88.png',
+        label: 'Tapa & Garlic Rice',
+        animation: 'food_land',
+        positionClass: 'top-20 right-6 sm:right-14',
+        sizeClass: 'w-18 h-18 sm:w-24 sm:h-24',
+        delayMs: 0,
+      },
+      {
+        id: 'gh-land-bl',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/05_diced_hotdogs_and_egg_44d5a234.png',
+        label: 'Diced Hotdogs & Egg',
+        animation: 'food_land',
+        positionClass: 'bottom-22 left-6 sm:left-14',
+        sizeClass: 'w-18 h-18 sm:w-24 sm:h-24',
+        delayMs: 500,
+      },
+      {
+        id: 'gh-land-br',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/09_creamy_chicken_and_egg_rice_bfe9e7b2.png',
+        label: 'Creamy Chicken & Egg Rice',
+        animation: 'food_land',
+        positionClass: 'bottom-22 right-6 sm:right-14',
+        sizeClass: 'w-18 h-18 sm:w-24 sm:h-24',
+        delayMs: 1000,
+      },
+      {
+        id: 'gh-land-ml',
+        emoji: '🥡',
+        imageUrl: '/assets/aistudio/01_shredded_beef_and_egg_883d5ffc.png',
+        label: 'Shredded Beef & Egg',
+        animation: 'food_land',
+        positionClass: 'top-1/3 left-4 sm:left-10',
+        sizeClass: 'w-16 h-16 sm:w-22 sm:h-22',
+        delayMs: 1400,
+      },
+    ],
+    brandCardClass: 'bg-[#fffcf7] border-[#d9a05b] text-[#2c1a0e] shadow-sm',
+    brandIconBgClass: 'bg-gradient-to-tr from-[#c67d30] to-[#f59e0b] text-white border-[#fde68a] shadow-amber-500/30',
+    brandSubtitleText: 'JCVcreatives Photobooth',
+    heroTitle: 'Gobble Haus',
+    heroTitleClass: 'text-[#2c1a0e] font-black tracking-tight drop-shadow-[0_2px_0_rgba(255,255,255,0.8)]',
+    heroSubtitle: 'JCVcreatives Photobooth • Rice Box Kitchen',
+    heroSubtitleClass: 'text-[#8c521e] font-bold tracking-wide',
+    stripCardClass: 'bg-[#fffdf9] border-2 border-[#2c1a0e] rounded-lg shadow-xl ring-2 ring-[#e7b877]',
+    polaroidCardClass: 'bg-[#fffdf9] border-2 border-[#2c1a0e] rounded-xl shadow-2xl ring-2 ring-[#f59e0b]',
+    photoSlotClass: 'bg-[#f8efe0] border border-[#d9a05b] rounded',
+    stripHeaderClass: 'text-[#2c1a0e] border-b-2 border-[#d9a05b] font-mono font-black',
+    stripFooterClass: 'text-[#8c521e] border-t border-dashed border-[#c68b45] font-mono font-bold',
+    leftStripHeader: 'GOBBLE HAUS',
+    leftStripFooter: '★ ORDER #01 ★',
+    leftCornerStickerImage: '/assets/aistudio/01_shredded_beef_and_egg_883d5ffc.png',
+    leftCornerAnimClass: 'sticker-food-land',
+    centerPolaroidHeader: 'GOBBLE HAUS VIP',
+    centerPolaroidCaption: 'eat well, snap happy! 🥡',
+    centerPolaroidCaptionClass: 'font-bold text-[#9a4b14]',
+    centerCornerBadgeImage: '/assets/aistudio/05_diced_hotdogs_and_egg_44d5a234.png',
+    centerCornerAnimClass: 'sticker-food-land',
+    rightStripHeader: 'RICE BOX CLUB',
+    rightStripFooter: '||| FRESH HOT |||',
+    rightCornerStickerImage: '/assets/aistudio/03_hotdogs_and_scrambled_egg_28f526aa.png',
+    rightCornerAnimClass: 'sticker-food-land',
+    envelopePocketClass: 'bg-gradient-to-b from-[#d9a05b] via-[#c68b45] to-[#a86f2c] border-t-3 border-[#2c1a0e] rounded-b-2xl shadow-2xl',
+    envelopeFlapClass: 'border-[#2c1a0e] bg-[#d9a05b]',
+    envelopeSealClass: 'bg-[#2c1a0e] border-2 border-[#fbbf24] shadow-lg',
+    envelopeSealTitleClass: 'text-[#fbbf24] font-black',
+    envelopeSealSubtitleClass: 'text-[#fde68a]',
+    envelopeAccentIcon: '🥡',
+    envelopeTitle: 'GOBBLE HAUS',
+    envelopeSubtitle: 'JCVCREATIVES PHOTOBOOTH',
+    buttonClass: 'bg-gradient-to-r from-[#d97706] via-[#f59e0b] to-[#d97706] hover:brightness-105 text-[#1c1008] font-black border-2 border-[#2c1a0e] shadow-[0_6px_0_#2c1a0e] rounded-full',
+    buttonText: 'Tap to Snap at Gobble Haus 🥡',
+    ctaSubtext: 'Capture your foodie keepsake & grab your favorite rice box!',
+    ctaSubtextClass: 'text-[#6e3f16] font-semibold',
+    bottomRowClass: 'text-[#5c3412] font-medium',
+    bottomIconClass: 'text-[#b45309]',
+    bottomFeatures: ['Receipt Photostrip', 'Instant Phone QR', 'Gobble Haus Stickers'],
+  },
+
+  // 1. DEFAULT — Classic Minimalist Studio
   {
     id: 'default',
     name: 'Classic Studio (Default)',
@@ -723,14 +959,14 @@ export const ATTRACT_OCCASION_THEMES: AttractOccasionTheme[] = [
   },
 ];
 
-const ACTIVE_THEME_STORAGE_KEY = 'jcv_attract_occasion_theme';
+const ACTIVE_THEME_STORAGE_KEY = 'jcv_attract_occasion_theme_v2';
 
 export const getActiveAttractThemeId = (): AttractOccasionId => {
   const saved = safeStorageGet(ACTIVE_THEME_STORAGE_KEY) as AttractOccasionId | null;
   if (saved && ATTRACT_OCCASION_THEMES.some((t) => t.id === saved)) {
     return saved;
   }
-  return 'default';
+  return 'gobble_haus';
 };
 
 export const setActiveAttractThemeId = (themeId: AttractOccasionId): void => {

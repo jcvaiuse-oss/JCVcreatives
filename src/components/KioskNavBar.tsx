@@ -147,7 +147,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             J
           </div>
           <span className="font-semibold tracking-wide text-xs text-zinc-900">
-            JCVcreatives <span className="text-zinc-400 font-normal">/ Studio</span>
+            JCVcreatives <span className="text-zinc-500 font-normal">Photobooth</span>
           </span>
         </button>
 

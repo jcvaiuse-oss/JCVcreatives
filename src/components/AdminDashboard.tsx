@@ -549,8 +549,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // Dark calibration print pattern
     ctx.fillStyle = '#000000';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 22px monospace';
-    ctx.fillText('⚡ SNAPKIOST PRO ⚡', testCanvas.width / 2, 40);
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('⚡ JCVCREATIVES PHOTOBOOTH ⚡', testCanvas.width / 2, 40);
     ctx.font = '14px monospace';
     ctx.fillText('THERMAL HARDWARE TEST', testCanvas.width / 2, 65);
     ctx.fillText(`KIOSK: ${config.kioskId}`, testCanvas.width / 2, 85);
@@ -683,7 +683,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black text-white">SnapKiosk Control Console</h1>
+                <h1 className="text-base sm:text-lg font-black text-white">JCVcreatives Photobooth Console</h1>
                 <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono">
                   {config.version}
                 </span>

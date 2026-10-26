@@ -36,10 +36,19 @@ export const sanitizeStoredAttractPhotos = (photos: unknown): string[] => {
   );
 };
 
+export const resolveStickerAssetUrl = (url: string): string => {
+  if (!url) return '';
+  if (url.startsWith('/assets/')) {
+    return `.${url}`;
+  }
+  return url;
+};
+
 /**
  * Memoized GPU-accelerated Animated Stickers Layer.
- * Renders spinning & shining disco balls, moving clowns, birthday cakes with flickering candle flames,
- * rising balloons, gliding doves/bats, falling snowflakes, and pulsing hearts without main-thread lag.
+ * Renders dropping Gobble Haus rice-box stickers, spinning & shining disco balls,
+ * moving clowns, birthday cakes with flickering candle flames, rising balloons,
+ * gliding doves/bats, falling snowflakes, and pulsing hearts without main-thread lag.
  */
 const AnimatedThemeStickers = React.memo(
   ({
@@ -51,6 +60,10 @@ const AnimatedThemeStickers = React.memo(
   }) => {
     const getAnimClass = (anim: AnimatedStickerItem['animation']) => {
       switch (anim) {
+        case 'food_drop':
+          return 'sticker-food-drop';
+        case 'food_land':
+          return 'sticker-food-land';
         case 'disco_ball_shine':
           return 'sticker-disco-spin';
         case 'clown_wiggle':
@@ -83,6 +96,34 @@ const AnimatedThemeStickers = React.memo(
             ...(item.delayMs ? { animationDelay: `${item.delayMs}ms` } : {}),
             ...(item.durationMs ? { animationDuration: `${item.durationMs}ms` } : {}),
           };
+
+          // 0. Custom Die-Cut Image Sticker (e.g. Gobble Haus Rice Box Stickers dropping & bouncing)
+          if (item.imageUrl) {
+            return (
+              <div
+                key={item.id}
+                style={style}
+                className={`absolute ${item.positionClass} ${item.sizeClass} ${getAnimClass(
+                  item.animation
+                )} flex items-center justify-center`}
+              >
+                <img
+                  src={resolveStickerAssetUrl(item.imageUrl)}
+                  alt={item.label || 'Sticker'}
+                  decoding="async"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (!img.dataset.fallback) {
+                      img.dataset.fallback = '1';
+                      const fileName = item.imageUrl?.split('/').pop() || '';
+                      img.src = `./stickers/gobble-haus/${fileName}`;
+                    }
+                  }}
+                  className="w-full h-full object-contain drop-shadow-[0_8px_14px_rgba(44,26,14,0.22)]"
+                />
+              </div>
+            );
+          }
 
           // 1. Special Composite Sticker: Spinning & Shining Disco Ball with Radiant Light Rays
           if (item.animation === 'disco_ball_shine') {
@@ -426,7 +467,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             <div className="text-[10px] uppercase tracking-wider opacity-70 font-mono">
               {theme.brandSubtitleText}
             </div>
-            <h2 className="text-sm sm:text-base font-bold tracking-tight">JCVcreatives</h2>
+            <h2 className="text-sm sm:text-base font-bold tracking-tight">JCVcreatives Photobooth</h2>
           </div>
         </div>
       </div>
@@ -456,7 +497,15 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             style={getCardTransformStyle('left')}
             className={`absolute left-1/2 top-2 w-24 h-50 flex flex-col p-1.5 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
-            {theme.leftCornerSticker && (
+            {theme.leftCornerStickerImage ? (
+              <img
+                src={resolveStickerAssetUrl(theme.leftCornerStickerImage)}
+                alt="Left Strip Sticker"
+                className={`absolute -top-4 -left-4 w-10 h-10 object-contain z-20 pointer-events-none drop-shadow-md ${
+                  theme.leftCornerAnimClass || 'sticker-food-land'
+                }`}
+              />
+            ) : theme.leftCornerSticker ? (
               <span
                 className={`absolute -top-2.5 -left-2.5 text-base z-20 pointer-events-none ${
                   theme.leftCornerAnimClass || 'sticker-twinkle-shine'
@@ -464,7 +513,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               >
                 {theme.leftCornerSticker}
               </span>
-            )}
+            ) : null}
             <div
               className={`text-[7px] text-center uppercase tracking-widest pb-1 truncate ${theme.stripHeaderClass}`}
             >
@@ -510,7 +559,15 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             style={getCardTransformStyle('center')}
             className={`absolute left-1/2 top-2 w-28 h-42 flex flex-col p-2 strip-card-gpu select-none ${theme.polaroidCardClass}`}
           >
-            {theme.centerCornerBadge && (
+            {theme.centerCornerBadgeImage ? (
+              <img
+                src={resolveStickerAssetUrl(theme.centerCornerBadgeImage)}
+                alt="Center Strip Sticker"
+                className={`absolute -top-5 -right-5 w-11 h-11 object-contain z-20 pointer-events-none drop-shadow-md ${
+                  theme.centerCornerAnimClass || 'sticker-food-land'
+                }`}
+              />
+            ) : theme.centerCornerBadge ? (
               <div className="absolute -top-3 -right-3 z-20 pointer-events-none flex flex-col items-center">
                 {theme.id === 'birthday' && (
                   <span className="text-[10px] -mb-1.5 sticker-candle-flicker">🔥</span>
@@ -526,7 +583,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                   {theme.centerCornerBadge}
                 </span>
               </div>
-            )}
+            ) : null}
             <div className={`text-[7px] text-center mb-1 truncate ${theme.stripHeaderClass}`}>
               {theme.centerPolaroidHeader}
             </div>
@@ -556,7 +613,15 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
             style={getCardTransformStyle('right')}
             className={`absolute left-1/2 top-2 w-24 h-50 flex flex-col p-1.5 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
-            {theme.rightCornerSticker && (
+            {theme.rightCornerStickerImage ? (
+              <img
+                src={resolveStickerAssetUrl(theme.rightCornerStickerImage)}
+                alt="Right Strip Sticker"
+                className={`absolute -top-4 -right-4 w-10 h-10 object-contain z-20 pointer-events-none drop-shadow-md ${
+                  theme.rightCornerAnimClass || 'sticker-food-land'
+                }`}
+              />
+            ) : theme.rightCornerSticker ? (
               <span
                 className={`absolute -top-2.5 -right-2.5 text-base z-20 pointer-events-none ${
                   theme.rightCornerAnimClass || 'sticker-twinkle-shine'
@@ -564,7 +629,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               >
                 {theme.rightCornerSticker}
               </span>
-            )}
+            ) : null}
             <div
               className={`text-[7px] text-center uppercase tracking-widest pb-1 truncate ${theme.stripHeaderClass}`}
             >
