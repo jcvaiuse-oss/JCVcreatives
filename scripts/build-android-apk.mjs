@@ -34,14 +34,22 @@ async function buildApk() {
     return;
   }
 
-  // Find latest build-tools and platform android.jar
+  // Find stable build-tools and platform android.jar
   const buildToolsRoot = path.join(sdkRoot, 'build-tools');
-  const buildToolsVersions = fs.readdirSync(buildToolsRoot).sort();
-  const buildToolsDir = path.join(buildToolsRoot, buildToolsVersions[buildToolsVersions.length - 1]);
+  const allBuildTools = fs.readdirSync(buildToolsRoot).sort();
+  const stableBuildTools = allBuildTools.filter((v) => !v.includes('-') && parseInt(v, 10) <= 36);
+  const chosenBuildTool = (stableBuildTools.length > 0 ? stableBuildTools : allBuildTools)[
+    (stableBuildTools.length > 0 ? stableBuildTools : allBuildTools).length - 1
+  ];
+  const buildToolsDir = path.join(buildToolsRoot, chosenBuildTool);
 
   const platformsRoot = path.join(sdkRoot, 'platforms');
-  const platformVersions = fs.readdirSync(platformsRoot).sort();
-  const platformDir = path.join(platformsRoot, platformVersions[platformVersions.length - 1]);
+  const allPlatforms = fs.readdirSync(platformsRoot).sort();
+  const stablePlatforms = allPlatforms.filter((v) => /^android-\d+$/.test(v) && parseInt(v.replace('android-', ''), 10) <= 36);
+  const chosenPlatform = (stablePlatforms.length > 0 ? stablePlatforms : allPlatforms)[
+    (stablePlatforms.length > 0 ? stablePlatforms : allPlatforms).length - 1
+  ];
+  const platformDir = path.join(platformsRoot, chosenPlatform);
   const androidJar = path.join(platformDir, 'android.jar');
 
   const aapt2 = path.join(buildToolsDir, 'aapt2');
@@ -270,13 +278,10 @@ public class MainActivity extends Activity {
   const mainJavaPath = path.join(srcJavaDir, 'MainActivity.java');
   run(`javac -source 1.8 -target 1.8 -bootclasspath "${androidJar}" -classpath "${androidJar}" -d "${classesDir}" "${rJavaPath}" "${mainJavaPath}"`);
 
-  // 9. Convert .class files to classes.dex using d8 with --min-api 21
-  const classFiles = fs
-    .readdirSync( path.join(classesDir, 'com', 'jcvcreatives', 'photobooth'))
-    .filter((f) => f.endsWith('.class'))
-    .map((f) => `"${path.join(classesDir, 'com', 'jcvcreatives', 'photobooth', f)}"`)
-    .join(' ');
-  run(`"${d8}" --min-api 21 --lib "${androidJar}" --output "${workDir}" ${classFiles}`);
+  // 9. Package .class files into classes.jar (avoids shell $1 expansion on inner classes) and convert to classes.dex using d8
+  const classesJar = path.join(workDir, 'classes.jar');
+  run(`jar cf "${classesJar}" -C "${classesDir}" .`);
+  run(`"${d8}" --min-api 21 --lib "${androidJar}" --output "${workDir}" "${classesJar}"`);
 
   // 10. Add classes.dex to the root of unaligned.apk
   run(`cd "${workDir}" && zip -uj "${unalignedApk}" "${path.join(workDir, 'classes.dex')}"`);
