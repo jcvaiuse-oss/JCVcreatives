@@ -302,9 +302,11 @@ public class MainActivity extends Activity {
 
   console.log(`Successfully built Android 7+ offline APK: ${outputApkDist}`);
   fs.rmSync(workDir, { recursive: true, force: true });
+  process.exit(0);
 }
 
 buildApk().catch((err) => {
   console.error('APK build error:', err);
   process.exit(1);
 });
+
