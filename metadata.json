@@ -1,0 +1,6 @@
+{
+  "name": "SnapKiosk Pro - Tablet Photo Booth",
+  "description": "Professional Android tablet photo booth kiosk with Bluetooth/USB thermal printing, QR & voucher payments, instant cloud sharing, customizable frames, and remote analytics.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

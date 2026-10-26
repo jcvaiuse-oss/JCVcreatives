@@ -1,0 +1,668 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from 'react';
+import { Camera, Printer, QrCode, Sparkles } from 'lucide-react';
+import { RemoteKioskConfig } from '../types';
+import { soundEffects } from '../services/soundEffects';
+import { storageService, safeStorageGet } from '../services/storage';
+import { EMBEDDED_DEFAULT_BOOTH_SAMPLES } from '../services/defaultSamplePhotos';
+import {
+  AttractOccasionId,
+  AnimatedStickerItem,
+  getActiveAttractThemeId,
+  getAttractThemeById,
+} from '../services/attractThemes';
+
+interface AttractScreenProps {
+  config: RemoteKioskConfig;
+  onStartSession: () => void;
+  onSecretAdminTap: () => void;
+}
+
+// Built-in studio booth sample photos (IMG_3042 + IMG_3043 in Strip 1, IMG_3044 in Strip 2, IMG_3045 + IMG_3046 in Strip 3)
+export const DEFAULT_BOOTH_SAMPLES: string[] = EMBEDDED_DEFAULT_BOOTH_SAMPLES;
+
+export const sanitizeStoredAttractPhotos = (photos: unknown): string[] => {
+  if (!Array.isArray(photos)) return [];
+  return photos.filter(
+    (p): p is string =>
+      typeof p === 'string' &&
+      p.trim().length > 0 &&
+      !p.includes('ScreenRecording_10-21-2026') &&
+      !p.includes('images.unsplash.com')
+  );
+};
+
+/**
+ * Memoized GPU-accelerated Animated Stickers Layer.
+ * Renders spinning & shining disco balls, moving clowns, birthday cakes with flickering candle flames,
+ * rising balloons, gliding doves/bats, falling snowflakes, and pulsing hearts without main-thread lag.
+ */
+const AnimatedThemeStickers = React.memo(
+  ({
+    stickers,
+    opacityClass,
+  }: {
+    stickers: AnimatedStickerItem[];
+    opacityClass: string;
+  }) => {
+    const getAnimClass = (anim: AnimatedStickerItem['animation']) => {
+      switch (anim) {
+        case 'disco_ball_shine':
+          return 'sticker-disco-spin';
+        case 'clown_wiggle':
+          return 'sticker-clown-wiggle';
+        case 'cake_with_candle':
+          return 'sticker-cake-bob';
+        case 'balloon_rise':
+          return 'sticker-balloon-rise';
+        case 'wing_glide':
+          return 'sticker-wing-glide';
+        case 'twinkle_shine':
+          return 'sticker-twinkle-shine';
+        case 'snow_fall':
+          return 'sticker-snow-fall';
+        case 'heartbeat':
+          return 'sticker-heartbeat';
+        case 'ghost_float':
+          return 'sticker-ghost-float';
+        default:
+          return 'sticker-twinkle-shine';
+      }
+    };
+
+    return (
+      <div
+        className={`absolute inset-0 pointer-events-none overflow-hidden z-0 select-none ${opacityClass}`}
+      >
+        {stickers.map((item) => {
+          const style: React.CSSProperties = {
+            ...(item.delayMs ? { animationDelay: `${item.delayMs}ms` } : {}),
+            ...(item.durationMs ? { animationDuration: `${item.durationMs}ms` } : {}),
+          };
+
+          // 1. Special Composite Sticker: Spinning & Shining Disco Ball with Radiant Light Rays
+          if (item.animation === 'disco_ball_shine') {
+            return (
+              <div
+                key={item.id}
+                className={`absolute ${item.positionClass} flex items-center justify-center`}
+              >
+                {/* Counter-rotating & pulsing neon shine starburst */}
+                <div
+                  style={style}
+                  className="absolute -inset-4 rounded-full bg-gradient-to-tr from-cyan-400/35 via-fuchsia-400/40 to-amber-300/35 blur-md sticker-disco-rays"
+                />
+                <span
+                  style={style}
+                  className="absolute -top-3 -right-3 text-xs sm:text-sm text-amber-300 sticker-disco-rays"
+                >
+                  ✨
+                </span>
+                <span
+                  style={style}
+                  className="absolute -bottom-2 -left-3 text-xs sm:text-sm text-cyan-300 sticker-disco-rays"
+                >
+                  ✦
+                </span>
+                {/* Spinning Disco Ball */}
+                <span style={style} className={`relative ${item.sizeClass} sticker-disco-spin`}>
+                  {item.emoji}
+                </span>
+              </div>
+            );
+          }
+
+          // 2. Special Composite Sticker: Birthday Cake with Moving/Flickering Candle Flame on Top
+          if (item.animation === 'cake_with_candle') {
+            return (
+              <div
+                key={item.id}
+                style={style}
+                className={`absolute ${item.positionClass} flex flex-col items-center sticker-cake-bob`}
+              >
+                {/* Flickering Candle Flame dancing on top of the cake */}
+                <div className="relative -mb-2.5 z-10 flex items-center justify-center">
+                  <span className="text-sm sm:text-base sticker-candle-flicker drop-shadow-[0_0_8px_rgba(251,191,36,0.9)]">
+                    🔥
+                  </span>
+                  <span className="absolute -top-1 -right-2 text-[10px] sticker-twinkle-shine">
+                    ✨
+                  </span>
+                </div>
+                {/* Cake Base */}
+                <span className={item.sizeClass}>{item.emoji}</span>
+              </div>
+            );
+          }
+
+          // 3. Standard Animated Sticker (Clown Wiggle, Rising Balloons, Gliding Wings, Snowfall, etc.)
+          return (
+            <span
+              key={item.id}
+              style={style}
+              className={`absolute ${item.positionClass} ${item.sizeClass} ${getAnimClass(
+                item.animation
+              )}`}
+            >
+              {item.emoji}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+);
+
+interface StartCallToActionProps {
+  onStart: () => void;
+  buttonClass: string;
+  buttonText: string;
+  ctaSubtext: string;
+  ctaSubtextClass: string;
+}
+
+// Memoized Start CTA so photo shuffles never trigger React reconciliation on the moving button
+const StartCallToAction = React.memo(
+  ({ onStart, buttonClass, buttonText, ctaSubtext, ctaSubtextClass }: StartCallToActionProps) => (
+    <div className="relative flex flex-col items-center mt-3 z-20">
+      <div className="animate-floatBob">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            soundEffects.playTap();
+            onStart();
+          }}
+          className={`group relative inline-flex items-center justify-center px-12 py-4 font-bold text-base sm:text-lg tracking-wide active:scale-95 transition-transform duration-150 cursor-pointer select-none ${buttonClass}`}
+        >
+          <span>{buttonText}</span>
+        </button>
+      </div>
+
+      <p className={`mt-3.5 text-xs font-normal ${ctaSubtextClass}`}>{ctaSubtext}</p>
+    </div>
+  )
+);
+
+export const AttractScreen: React.FC<AttractScreenProps> = ({
+  config,
+  onStartSession,
+  onSecretAdminTap,
+}) => {
+  const [adminTapCount, setAdminTapCount] = useState(0);
+  const [activeThemeId, setActiveThemeId] = useState<AttractOccasionId>(() =>
+    getActiveAttractThemeId()
+  );
+  const [customPhotos, setCustomPhotos] = useState<string[]>(() => {
+    try {
+      const saved = safeStorageGet('jcv_attract_custom_photos');
+      if (saved) {
+        const cleaned = sanitizeStoredAttractPhotos(JSON.parse(saved));
+        if (cleaned.length > 0) return cleaned;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  // Strip shuffle position index (0, 1, 2)
+  const [shuffleStep, setShuffleStep] = useState<number>(0);
+
+  const theme = getAttractThemeById(activeThemeId);
+
+  // Secret corner multi-tap for kiosk operators
+  const handleLogoTap = () => {
+    soundEffects.playTap();
+    const next = adminTapCount + 1;
+    setAdminTapCount(next);
+    if (next >= 4) {
+      setAdminTapCount(0);
+      onSecretAdminTap();
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAdminTapCount(0);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [adminTapCount]);
+
+  // Synchronize custom photos, theme selection, and shuffles from Admin Screen
+  useEffect(() => {
+    storageService.getAttractPhotos().then((stored) => {
+      const cleaned = sanitizeStoredAttractPhotos(stored);
+      if (cleaned.length > 0) {
+        setCustomPhotos(cleaned);
+      }
+    });
+
+    const updatePhotosFromStorage = (e?: Event) => {
+      const customEvt = e as CustomEvent<string[]>;
+      if (customEvt && customEvt.detail && Array.isArray(customEvt.detail)) {
+        setCustomPhotos(sanitizeStoredAttractPhotos(customEvt.detail));
+        return;
+      }
+
+      try {
+        const saved = safeStorageGet('jcv_attract_custom_photos');
+        if (saved) {
+          const cleaned = sanitizeStoredAttractPhotos(JSON.parse(saved));
+          if (cleaned.length > 0) {
+            setCustomPhotos(cleaned);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      storageService.getAttractPhotos().then((stored) => {
+        setCustomPhotos(sanitizeStoredAttractPhotos(stored));
+      });
+    };
+
+    const handleThemeUpdated = (e?: Event) => {
+      const customEvt = e as CustomEvent<AttractOccasionId>;
+      if (customEvt?.detail) {
+        setActiveThemeId(customEvt.detail);
+      } else {
+        setActiveThemeId(getActiveAttractThemeId());
+      }
+    };
+
+    const handleShuffleEvent = () => {
+      setShuffleStep((s) => (s + 1) % 3);
+    };
+
+    window.addEventListener('jcv_attract_photos_updated', updatePhotosFromStorage);
+    window.addEventListener('jcv_attract_theme_updated', handleThemeUpdated);
+    window.addEventListener('jcv_attract_shuffle_triggered', handleShuffleEvent);
+    window.addEventListener('storage', () => {
+      updatePhotosFromStorage();
+      handleThemeUpdated();
+    });
+
+    return () => {
+      window.removeEventListener('jcv_attract_photos_updated', updatePhotosFromStorage);
+      window.removeEventListener('jcv_attract_theme_updated', handleThemeUpdated);
+      window.removeEventListener('jcv_attract_shuffle_triggered', handleShuffleEvent);
+    };
+  }, []);
+
+  // Automatic gentle shuffling of the 3 strips
+  useEffect(() => {
+    const isAutoShuffle = safeStorageGet('jcv_attract_auto_shuffle') !== 'false';
+    if (!isAutoShuffle) return;
+
+    const interval = setInterval(() => {
+      setShuffleStep((s) => (s + 1) % 3);
+    }, 3800);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStripTap = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundEffects.playTap();
+    setShuffleStep((s) => (s + 1) % 3);
+  };
+
+  const media = config.frontScreenMedia;
+  const hasMedia = Boolean(media?.enabled && (media?.url || media?.canvaEmbedUrl));
+  const isBackgroundMedia = hasMedia && media?.placement === 'background';
+
+  // Determine active photos array for the 3 strips (custom photos set by Admin or defaults)
+  const activePhotos = customPhotos.length > 0 ? customPhotos : DEFAULT_BOOTH_SAMPLES;
+
+  const getPhoto = (index: number) => {
+    if (activePhotos.length === 0) return null;
+    return activePhotos[index % activePhotos.length];
+  };
+
+  /**
+   * Pure GPU-accelerated transform states for the 3 shuffling strips.
+   * All 3 strips remain anchored at left-1/2 top-2 and only interpolate transform: translate3d(),
+   * eliminating main-thread layout reflows and paint lag completely.
+   */
+  const getCardTransformStyle = (cardId: 'left' | 'center' | 'right'): React.CSSProperties => {
+    const posLeft: React.CSSProperties = {
+      transform: 'translate3d(-122%, 10px, 0) rotate(-14deg) scale3d(0.95, 0.95, 1)',
+      zIndex: 10,
+    };
+    const posCenter: React.CSSProperties = {
+      transform: 'translate3d(-50%, -6px, 0) rotate(0deg) scale3d(1.06, 1.06, 1)',
+      zIndex: 25,
+    };
+    const posRight: React.CSSProperties = {
+      transform: 'translate3d(22%, 10px, 0) rotate(14deg) scale3d(0.95, 0.95, 1)',
+      zIndex: 10,
+    };
+
+    if (shuffleStep === 0) {
+      if (cardId === 'left') return posLeft;
+      if (cardId === 'center') return posCenter;
+      return posRight;
+    } else if (shuffleStep === 1) {
+      if (cardId === 'right') return posCenter;
+      if (cardId === 'left') return posRight;
+      return posLeft;
+    } else {
+      if (cardId === 'left') return posCenter;
+      if (cardId === 'center') return posRight;
+      return posLeft;
+    }
+  };
+
+  return (
+    <div
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        soundEffects.playTap();
+        onStartSession();
+      }}
+      className={`relative flex-1 flex flex-col justify-between items-center p-6 sm:p-10 select-none cursor-pointer overflow-hidden min-h-[90vh] transition-colors duration-500 ${theme.screenBgClass}`}
+    >
+      {/* Background Animated Video / GIF / Canva Embed Layer (if enabled by operator) */}
+      {isBackgroundMedia && (
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+          {media.mediaType === 'video' && (
+            <video
+              src={media.url}
+              autoPlay
+              loop={media.loop ?? true}
+              muted={media.muted ?? true}
+              playsInline
+              className="w-full h-full object-cover"
+            />
+          )}
+          {media.mediaType === 'gif' && (
+            <img
+              src={media.url}
+              alt="Event Background"
+              className="w-full h-full object-cover"
+            />
+          )}
+          {media.mediaType === 'canva_embed' && (
+            <iframe
+              src={media.canvaEmbedUrl || media.url}
+              title="Canva Event Background"
+              className="w-full h-full border-0 pointer-events-none scale-105"
+              allow="autoplay; fullscreen"
+            />
+          )}
+          <div
+            className="absolute inset-0 bg-white/70 transition-opacity duration-300"
+            style={{ opacity: (media.overlayOpacity ?? 50) / 100 }}
+          />
+        </div>
+      )}
+
+      {/* Choreographed Moving Occasion Stickers (Spinning Disco Ball, Moving Clown, Flickering Candle Cake, Rising Balloons) */}
+      <AnimatedThemeStickers
+        stickers={theme.animatedStickers}
+        opacityClass={theme.floatingOpacityClass}
+      />
+
+      {/* Top Header & Event Title */}
+      <div className="w-full flex justify-between items-start z-10 max-w-2xl">
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            handleLogoTap();
+          }}
+          className={`cursor-pointer group flex items-center gap-3 p-2 rounded-2xl border shadow-xs transition ${theme.brandCardClass}`}
+        >
+          <div
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold shadow-md border ${theme.brandIconBgClass}`}
+          >
+            <Camera className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider opacity-70 font-mono">
+              {theme.brandSubtitleText}
+            </div>
+            <h2 className="text-sm sm:text-base font-bold tracking-tight">JCVcreatives</h2>
+          </div>
+        </div>
+      </div>
+
+      {/* Hero Visual Area: Occasion Envelope with Fan-out Photostrips */}
+      <div className="my-auto z-10 flex flex-col items-center text-center max-w-md w-full py-4">
+        {/* Title branding lockup */}
+        <div className="mb-2 text-center">
+          <h1
+            className={`text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight mb-1 ${theme.heroTitleClass}`}
+          >
+            {theme.heroTitle}
+          </h1>
+          <p className={`text-sm sm:text-base tracking-wide ${theme.heroSubtitleClass}`}>
+            {theme.heroSubtitle}
+          </p>
+        </div>
+
+        {/* Realistic Envelope & Shuffling Photostrips Centerpiece */}
+        <div
+          onClick={handleStripTap}
+          className="relative my-4 w-72 sm:w-80 h-72 sm:h-80 flex items-center justify-center cursor-pointer group"
+          title="Tap to shuffle strips"
+        >
+          {/* Strip 1: Left 2-cut Photostrip (IMG_3042 + IMG_3043 together in one strip) */}
+          <div
+            style={getCardTransformStyle('left')}
+            className={`absolute left-1/2 top-2 w-24 h-50 flex flex-col p-1.5 strip-card-gpu select-none ${theme.stripCardClass}`}
+          >
+            {theme.leftCornerSticker && (
+              <span
+                className={`absolute -top-2.5 -left-2.5 text-base z-20 pointer-events-none ${
+                  theme.leftCornerAnimClass || 'sticker-twinkle-shine'
+                }`}
+              >
+                {theme.leftCornerSticker}
+              </span>
+            )}
+            <div
+              className={`text-[7px] text-center uppercase tracking-widest pb-1 truncate ${theme.stripHeaderClass}`}
+            >
+              {theme.leftStripHeader}
+            </div>
+            <div className="flex-1 flex flex-col justify-around py-1 gap-1.5">
+              <div
+                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+              >
+                {getPhoto(0) ? (
+                  <img
+                    src={getPhoto(0)!}
+                    alt="Strip 1 Top"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs">📸</span>
+                )}
+              </div>
+              <div
+                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+              >
+                {getPhoto(1) ? (
+                  <img
+                    src={getPhoto(1)!}
+                    alt="Strip 1 Bottom"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs">✨</span>
+                )}
+              </div>
+            </div>
+            <div className={`text-[6px] text-center pt-1 truncate ${theme.stripFooterClass}`}>
+              {theme.leftStripFooter}
+            </div>
+          </div>
+
+          {/* Strip 2: Center Front Polaroid Frame (IMG_3044) */}
+          <div
+            style={getCardTransformStyle('center')}
+            className={`absolute left-1/2 top-2 w-28 h-42 flex flex-col p-2 strip-card-gpu select-none ${theme.polaroidCardClass}`}
+          >
+            {theme.centerCornerBadge && (
+              <div className="absolute -top-3 -right-3 z-20 pointer-events-none flex flex-col items-center">
+                {theme.id === 'birthday' && (
+                  <span className="text-[10px] -mb-1.5 sticker-candle-flicker">🔥</span>
+                )}
+                {theme.id === 'retro_disco' && (
+                  <span className="absolute -top-1 -right-1 text-[10px] sticker-disco-rays">✨</span>
+                )}
+                <span
+                  className={`text-base drop-shadow-xs ${
+                    theme.centerCornerAnimClass || 'sticker-twinkle-shine'
+                  }`}
+                >
+                  {theme.centerCornerBadge}
+                </span>
+              </div>
+            )}
+            <div className={`text-[7px] text-center mb-1 truncate ${theme.stripHeaderClass}`}>
+              {theme.centerPolaroidHeader}
+            </div>
+            <div
+              className={`w-full h-26 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+            >
+              {getPhoto(2) ? (
+                <img
+                  src={getPhoto(2)!}
+                  alt="Polaroid Hero"
+                  decoding="async"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-2xl">😊</span>
+              )}
+            </div>
+            <div
+              className={`mt-auto text-center text-[10px] truncate ${theme.centerPolaroidCaptionClass}`}
+            >
+              {theme.centerPolaroidCaption}
+            </div>
+          </div>
+
+          {/* Strip 3: Right Receipt 2-cut Photostrip (IMG_3045 + IMG_3046 together in one strip) */}
+          <div
+            style={getCardTransformStyle('right')}
+            className={`absolute left-1/2 top-2 w-24 h-50 flex flex-col p-1.5 strip-card-gpu select-none ${theme.stripCardClass}`}
+          >
+            {theme.rightCornerSticker && (
+              <span
+                className={`absolute -top-2.5 -right-2.5 text-base z-20 pointer-events-none ${
+                  theme.rightCornerAnimClass || 'sticker-twinkle-shine'
+                }`}
+              >
+                {theme.rightCornerSticker}
+              </span>
+            )}
+            <div
+              className={`text-[7px] text-center uppercase tracking-widest pb-1 truncate ${theme.stripHeaderClass}`}
+            >
+              {theme.rightStripHeader}
+            </div>
+            <div className="flex-1 flex flex-col justify-around py-1 gap-1.5">
+              <div
+                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+              >
+                {getPhoto(3) ? (
+                  <img
+                    src={getPhoto(3)!}
+                    alt="Receipt 1 Top"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs">✌️</span>
+                )}
+              </div>
+              <div
+                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+              >
+                {getPhoto(4) ? (
+                  <img
+                    src={getPhoto(4)!}
+                    alt="Receipt 2 Bottom"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs">🥰</span>
+                )}
+              </div>
+            </div>
+            <div className={`text-[6px] text-center pt-1 truncate ${theme.stripFooterClass}`}>
+              {theme.rightStripFooter}
+            </div>
+          </div>
+
+          {/* Front Envelope Pocket: Styled dynamically per occasion */}
+          <div
+            className={`absolute bottom-0 inset-x-0 h-28 z-30 flex flex-col items-center justify-center pointer-events-none ${theme.envelopePocketClass}`}
+          >
+            {/* Envelope V-flap folded accent */}
+            <div
+              className={`absolute -top-3 w-6 h-6 border-b border-r transform rotate-45 rounded-br-sm shadow-2xs ${theme.envelopeFlapClass}`}
+            />
+
+            {/* Occasion Emblem Seal Badge */}
+            <div
+              className={`flex flex-col items-center gap-1 z-10 px-5 py-2 rounded-full pointer-events-auto ${theme.envelopeSealClass}`}
+            >
+              <div
+                className={`text-xs font-bold tracking-widest uppercase flex items-center gap-2 ${theme.envelopeSealTitleClass}`}
+              >
+                <span className="sticker-twinkle-shine">{theme.envelopeAccentIcon}</span>
+                <span>{theme.envelopeTitle}</span>
+                <span className="sticker-twinkle-shine">{theme.envelopeAccentIcon}</span>
+              </div>
+              <span
+                className={`text-[9px] font-mono tracking-wider ${theme.envelopeSealSubtitleClass}`}
+              >
+                {theme.envelopeSubtitle}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Moving Occasion Button: Memoized & GPU-accelerated */}
+        <StartCallToAction
+          onStart={onStartSession}
+          buttonClass={theme.buttonClass}
+          buttonText={theme.buttonText}
+          ctaSubtext={theme.ctaSubtext}
+          ctaSubtextClass={theme.ctaSubtextClass}
+        />
+      </div>
+
+      {/* Bottom Minimal Feature Row */}
+      <div
+        className={`w-full z-10 pt-4 flex items-center justify-center gap-6 max-w-xl text-xs ${theme.bottomRowClass}`}
+      >
+        <div className="flex items-center gap-2">
+          <Printer className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />
+          <span>{theme.bottomFeatures[0]}</span>
+        </div>
+        <span>•</span>
+        <div className="flex items-center gap-2">
+          <QrCode className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />
+          <span>{theme.bottomFeatures[1]}</span>
+        </div>
+        <span>•</span>
+        <div className="flex items-center gap-2">
+          <Sparkles className={`w-4 h-4 shrink-0 ${theme.bottomIconClass}`} />
+          <span>{theme.bottomFeatures[2]}</span>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,205 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export type ScreenState = 
+  | 'attract'      // Welcome screen with "Tap to start"
+  | 'payment'      // QR payment or voucher code gate
+  | 'frame_select' // Choose frame layout, theme, and filter
+  | 'countdown'    // Countdown 3, 2, 1
+  | 'capture'      // Live photo capture loop
+  | 'editor'       // Doodles, stickers, and final review
+  | 'print_share'  // Print on thermal printer & QR cloud share
+  | 'admin';       // Management dashboard, telemetry, remote config
+
+export type FrameLayoutType = 'strip_3' | 'strip_4' | 'grid_4' | 'single_polaroid';
+
+export type ThemeCategory =
+  | 'minimal'
+  | 'wedding'
+  | 'floral'
+  | 'holiday'
+  | 'passport'
+  | 'party'
+  | 'retro'
+  | 'custom';
+
+export interface FrameTheme {
+  id: string;
+  name: string;
+  category: ThemeCategory;
+  background: string;
+  borderStyle: string;
+  textColor: string;
+  accentColor: string;
+  headerText: string;
+  footerText: string;
+  dateVisible: boolean;
+  decorativeSvg?: string;
+  cornerIcon?: string;
+  previewGradient?: string;
+}
+
+export type PhotoFilterType = 
+  | 'none'
+  | 'vintage'
+  | 'noir'
+  | 'warm'
+  | 'glamour'
+  | 'cyber'
+  | 'duotone';
+
+export type DigitalPropType =
+  | 'none'
+  | 'party_hat'
+  | 'retro_sunglasses'
+  | 'birthday_crown'
+  | 'classic_mustache'
+  | 'cat_ears'
+  | 'star_glasses'
+  | 'flower_crown'
+  | 'bunny_ears';
+
+export interface DigitalPropItem {
+  id: DigitalPropType;
+  name: string;
+  emoji: string;
+  category: 'head' | 'eyes' | 'mouth';
+  defaultScale: number;
+  offsetY: number; // percentage offset from face center
+  description: string;
+}
+
+export interface PhotoCapture {
+  id: string;
+  dataUrl: string;
+  timestamp: number;
+}
+
+export interface StickerItem {
+  id: string;
+  emoji: string;
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  scale: number;
+  rotation: number;
+}
+
+export interface DrawingPath {
+  color: string;
+  lineWidth: number;
+  points: { x: number; y: number }[];
+}
+
+export interface PhotostripResult {
+  id: string;
+  createdAt: number;
+  photos: string[]; // dataUrls
+  compositeDataUrl: string; // finalized full strip
+  thermalRasterDataUrl?: string; // 1-bit dithered monochrome preview
+  layout: FrameLayoutType;
+  themeId: string;
+  filter: PhotoFilterType;
+  eventTitle: string;
+  shareCode: string;
+  shareUrl: string;
+}
+
+export interface Voucher {
+  code: string;
+  discountPercent: number; // 100 for 100% free pass
+  maxUses: number;
+  usedCount: number;
+  description: string;
+  expiresAt: number;
+  active: boolean;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  method: 'qr_mock' | 'qr_pix' | 'qr_cashapp' | 'voucher' | 'free_staff_pass';
+  amount: number;
+  currency: string;
+  status: 'pending' | 'completed' | 'failed';
+  timestamp: number;
+  voucherCode?: string;
+  kioskId: string;
+}
+
+export interface ThermalPrinterConfig {
+  connectionType: 'bluetooth' | 'usb' | 'virtual';
+  deviceName?: string;
+  paperWidthMm: 58 | 80;
+  dotsPerLine: 384 | 576;
+  contrast: number; // 0 to 100 (50 default)
+  autoCut: boolean;
+  printCopies: number;
+  feedLines: number;
+  density: 'light' | 'normal' | 'dark';
+}
+
+export interface EmailQueueItem {
+  id: string;
+  recipientEmail: string;
+  photostripId: string;
+  photostripUrl: string;
+  eventTitle: string;
+  queuedAt: number;
+  status: 'queued' | 'sent' | 'failed';
+  retries: number;
+}
+
+export interface KioskTelemetry {
+  totalSessions: number;
+  totalPrints: number;
+  paperRemainingPercent: number; // 100 down to 0
+  totalRevenue: number;
+  currency: string;
+  activeSince: number;
+  lastPrintTimestamp?: number;
+  popularFrames: Record<string, number>;
+  popularFilters: Record<string, number>;
+  deviceBatteryLevel?: number;
+  isOnline: boolean;
+  queuedEmailsCount: number;
+  averageSessionDurationSec: number;
+}
+
+export type FrontScreenMediaType = 'none' | 'gif' | 'video' | 'canva_embed';
+export type FrontScreenMediaPlacement = 'center_hero' | 'background';
+
+export interface FrontScreenMediaConfig {
+  enabled: boolean;
+  mediaType: FrontScreenMediaType;
+  url: string; // Video URL, GIF URL, Canva export URL, or base64 data URL
+  canvaEmbedUrl?: string; // Optional Canva embed iframe src
+  placement: FrontScreenMediaPlacement; // 'center_hero' or 'background'
+  overlayOpacity: number; // 0 to 100 (for background video/gif dimming)
+  loop: boolean;
+  muted: boolean;
+  badgeText?: string;
+  headline?: string;
+  subheadline?: string;
+}
+
+export interface RemoteKioskConfig {
+  kioskId: string;
+  locationName: string;
+  eventTitle: string;
+  eventSubtitle: string;
+  eventDate: string;
+  eventHashtag: string;
+  pricePerSession: number;
+  currencySymbol: string;
+  freePlayMode: boolean;
+  passcodeAdminPin: string;
+  allowedLayouts: FrameLayoutType[];
+  thermalPrinter: ThermalPrinterConfig;
+  customWatermarkUrl?: string;
+  frontScreenMedia?: FrontScreenMediaConfig;
+  remoteSyncUrl?: string;
+  autoUpdateEnabled: boolean;
+  version: string;
+  lastSyncTimestamp: number;
+}

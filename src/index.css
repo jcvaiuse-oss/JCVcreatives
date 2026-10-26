@@ -1,0 +1,404 @@
+@import "tailwindcss";
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.4);
+  }
+  50% {
+    transform: scale(1.035);
+    box-shadow: 0 0 28px 8px rgba(125, 211, 252, 0.35);
+  }
+}
+
+@keyframes rippleWave {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-150%);
+  }
+  50%, 100% {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes bounceRight {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes floatBob {
+  0%, 100% {
+    transform: translate3d(0, 0px, 0) scale3d(1, 1, 1);
+  }
+  50% {
+    transform: translate3d(0, -12px, 0) scale3d(1.035, 1.035, 1);
+  }
+}
+
+.animate-floatBob {
+  animation: floatBob 2s infinite ease-in-out;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.strip-card-gpu {
+  transition: transform 650ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out;
+}
+
+.animate-pulseGlow {
+  animation: pulseGlow 2.4s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.animate-rippleWave {
+  animation: rippleWave 2.4s infinite cubic-bezier(0, 0.2, 0.8, 1);
+}
+
+.animate-shimmer {
+  animation: shimmer 3s infinite ease-in-out;
+}
+
+.animate-bounceRight {
+  animation: bounceRight 1.5s infinite ease-in-out;
+}
+
+/* --- GPU-Accelerated Occasion Theme Sticker Animations --- */
+
+@keyframes discoSpinShine {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale3d(1, 1, 1);
+  }
+  25% {
+    transform: translate3d(0, -4px, 0) rotate(90deg) scale3d(1.14, 1.14, 1);
+  }
+  50% {
+    transform: translate3d(0, 0, 0) rotate(180deg) scale3d(1, 1, 1);
+  }
+  75% {
+    transform: translate3d(0, 4px, 0) rotate(270deg) scale3d(1.16, 1.16, 1);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(360deg) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes discoRaysFlash {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale3d(0.85, 0.85, 1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate3d(0, 0, 0) rotate(-180deg) scale3d(1.35, 1.35, 1);
+    opacity: 1;
+  }
+}
+
+@keyframes clownWiggle {
+  0%, 100% {
+    transform: translate3d(0, 0px, 0) rotate(-14deg) scale3d(1, 1, 1);
+  }
+  25% {
+    transform: translate3d(6px, -12px, 0) rotate(12deg) scale3d(1.1, 1.1, 1);
+  }
+  50% {
+    transform: translate3d(0, -2px, 0) rotate(-12deg) scale3d(1.04, 1.04, 1);
+  }
+  75% {
+    transform: translate3d(-6px, -14px, 0) rotate(15deg) scale3d(1.12, 1.12, 1);
+  }
+}
+
+@keyframes candleFlameFlicker {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1) rotate(-5deg);
+    opacity: 0.95;
+  }
+  25% {
+    transform: translate3d(1px, -2px, 0) scale3d(0.92, 1.24, 1) rotate(6deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate3d(-1px, -1px, 0) scale3d(1.12, 0.9, 1) rotate(-4deg);
+    opacity: 0.85;
+  }
+  75% {
+    transform: translate3d(1px, -3px, 0) scale3d(0.96, 1.28, 1) rotate(5deg);
+    opacity: 1;
+  }
+}
+
+@keyframes cakeBob {
+  0%, 100% {
+    transform: translate3d(0, 0px, 0) scale3d(1, 1, 1);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0) scale3d(1.05, 1.05, 1);
+  }
+}
+
+@keyframes balloonRiseUp {
+  0% {
+    transform: translate3d(0px, 95vh, 0) rotate(-6deg) scale3d(0.9, 0.9, 1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  30% {
+    transform: translate3d(16px, 65vh, 0) rotate(7deg) scale3d(1, 1, 1);
+  }
+  60% {
+    transform: translate3d(-16px, 30vh, 0) rotate(-7deg) scale3d(1.04, 1.04, 1);
+  }
+  90% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(10px, -18vh, 0) rotate(5deg) scale3d(1, 1, 1);
+    opacity: 0;
+  }
+}
+
+@keyframes wingGlide {
+  0%, 100% {
+    transform: translate3d(-10px, 0px, 0) rotate(-6deg) scale3d(1, 1, 1);
+  }
+  50% {
+    transform: translate3d(14px, -14px, 0) rotate(8deg) scale3d(1.08, 1.08, 1);
+  }
+}
+
+@keyframes twinkleShine {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale3d(0.88, 0.88, 1) rotate(0deg);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate3d(0, -5px, 0) scale3d(1.22, 1.22, 1) rotate(15deg);
+    opacity: 1;
+  }
+}
+
+@keyframes snowFallDown {
+  0% {
+    transform: translate3d(-8px, -12vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(12px, 45vh, 0) rotate(180deg);
+  }
+  85% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(-10px, 100vh, 0) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes heartBeatPulse {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  18% {
+    transform: translate3d(0, -3px, 0) scale3d(1.22, 1.22, 1);
+  }
+  36% {
+    transform: translate3d(0, 0, 0) scale3d(0.95, 0.95, 1);
+  }
+  54% {
+    transform: translate3d(0, -4px, 0) scale3d(1.16, 1.16, 1);
+  }
+}
+
+@keyframes ghostSpookyFloat {
+  0%, 100% {
+    transform: translate3d(-8px, 0px, 0) rotate(-8deg) scale3d(1, 1, 1);
+  }
+  33% {
+    transform: translate3d(10px, -16px, 0) rotate(10deg) scale3d(1.1, 1.1, 1);
+  }
+  66% {
+    transform: translate3d(-6px, -6px, 0) rotate(-5deg) scale3d(0.95, 0.95, 1);
+  }
+}
+
+.sticker-disco-spin {
+  animation: discoSpinShine 4s infinite linear;
+  will-change: transform;
+}
+
+.sticker-disco-rays {
+  animation: discoRaysFlash 2.2s infinite ease-in-out;
+  will-change: transform, opacity;
+}
+
+.sticker-clown-wiggle {
+  animation: clownWiggle 2.4s infinite ease-in-out;
+  will-change: transform;
+}
+
+.sticker-candle-flicker {
+  animation: candleFlameFlicker 0.9s infinite ease-in-out;
+  will-change: transform, opacity;
+}
+
+.sticker-cake-bob {
+  animation: cakeBob 2.6s infinite ease-in-out;
+  will-change: transform;
+}
+
+.sticker-balloon-rise {
+  animation: balloonRiseUp 7.5s infinite linear;
+  will-change: transform, opacity;
+}
+
+.sticker-wing-glide {
+  animation: wingGlide 3.2s infinite ease-in-out;
+  will-change: transform;
+}
+
+.sticker-twinkle-shine {
+  animation: twinkleShine 2.2s infinite ease-in-out;
+  will-change: transform, opacity;
+}
+
+.sticker-snow-fall {
+  animation: snowFallDown 8s infinite linear;
+  will-change: transform, opacity;
+}
+
+.sticker-heartbeat {
+  animation: heartBeatPulse 1.8s infinite ease-in-out;
+  will-change: transform;
+}
+
+.sticker-ghost-float {
+  animation: ghostSpookyFloat 3.6s infinite ease-in-out;
+  will-change: transform;
+}
+
+/* Thermal Printer Physical Output Slide-out Animation */
+@keyframes thermalFeedOut {
+  0% {
+    transform: translateY(-102%);
+    opacity: 0.85;
+    filter: brightness(0.95);
+  }
+  14% {
+    transform: translateY(-80%);
+  }
+  26% {
+    transform: translateY(-72%);
+  }
+  38% {
+    transform: translateY(-54%);
+  }
+  50% {
+    transform: translateY(-44%);
+  }
+  64% {
+    transform: translateY(-26%);
+  }
+  78% {
+    transform: translateY(-12%);
+  }
+  90% {
+    transform: translateY(3px);
+  }
+  96% {
+    transform: translateY(-1px);
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+@keyframes thermalSlotPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 16px 2px rgba(255, 255, 255, 0.25);
+  }
+}
+
+.animate-thermalFeed {
+  animation: thermalFeedOut 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-slotPulse {
+  animation: thermalSlotPulse 1.8s infinite ease-in-out;
+}
+
+/* Optimize touch tablet kiosk interaction */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Direct Browser Print media styling for thermal receipt printing */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #thermal-print-target, #thermal-print-target * {
+    visibility: visible;
+  }
+  #thermal-print-target {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 58mm;
+    margin: 0;
+    padding: 0;
+  }
+}
