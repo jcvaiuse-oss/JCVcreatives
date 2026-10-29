@@ -21,13 +21,15 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   allowedLayouts: ['strip_3', 'grid_4', 'single_polaroid', 'strip_4'],
   thermalPrinter: {
     connectionType: 'virtual',
-    paperWidthMm: 58,
-    dotsPerLine: 384,
-    contrast: 50,
+    paperWidthMm: 80,
+    dotsPerLine: 576,
+    contrast: 40,
+    brightness: 45,
+    printDarkness: 35,
     autoCut: true,
     printCopies: 1,
     feedLines: 4,
-    density: 'normal',
+    density: 'light',
   },
   frontScreenMedia: {
     enabled: false,
@@ -71,6 +73,16 @@ class RemoteConfigService {
       }
       if (this.config.showAdminInMenu === undefined) {
         this.config.showAdminInMenu = false;
+        needsSave = true;
+      }
+      if (this.config.thermalPrinter && this.config.thermalPrinter.brightness === undefined) {
+        this.config.thermalPrinter.brightness = 45;
+        this.config.thermalPrinter.contrast = 40;
+        needsSave = true;
+      }
+      if (this.config.thermalPrinter && this.config.thermalPrinter.printDarkness === undefined) {
+        this.config.thermalPrinter.printDarkness = 35;
+        this.config.thermalPrinter.density = 'light';
         needsSave = true;
       }
       if (needsSave) {

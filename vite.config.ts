@@ -262,6 +262,7 @@ export default defineConfig(() => {
           'pwa-192x192.png',
           'pwa-512x512.png',
           'pwa-maskable-512x512.png',
+          'JCV-AutoPrint-Setup.bat',
           'stickers/gobble-haus/*.png',
         ],
         manifest: {
@@ -303,8 +304,8 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json,webmanifest}'],
-          globIgnores: ['**/*.apk', '**/downloads/**', '**/assets/aistudio/*.PNG', '**/assets/aistudio/*.jpeg'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json,webmanifest,bat}'],
+          globIgnores: ['**/*.apk', '**/downloads/**', '**/assets/aistudio/*.PNG', '**/assets/aistudio/*.jpeg', '**/assets/aistudio/*.mov'],
           maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
@@ -339,7 +340,6 @@ export default defineConfig(() => {
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };
 });

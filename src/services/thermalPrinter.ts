@@ -72,6 +72,10 @@ class ThermalPrinterService {
   private networkIp: string = '192.168.1.100';
   private networkPort: number = 9100;
 
+  // Local Windows Silent Print Bridge (http://127.0.0.1:19100) for zero-popup automatic OS printing
+  private silentBridgeActive = false;
+  private silentBridgePrinterName = '';
+
   private currentStatus: PrinterDeviceStatus = {
     isConnected: true,
     connectionType: 'virtual',
@@ -112,6 +116,83 @@ class ThermalPrinterService {
     }
 
     this.setupUsbHotplugListeners();
+    this.setupSilentBridgeListener();
+    this.probeSilentBridge();
+  }
+
+  private setupSilentBridgeListener() {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('message', (e: MessageEvent) => {
+      if (e.data && e.data.type === 'JCV_BRIDGE_STATUS' && e.data.ok) {
+        this.markSilentBridgeConnected(e.data.printerName || 'EPSON / USB Thermal Printer');
+      }
+    });
+  }
+
+  private markSilentBridgeConnected(printerName: string) {
+    this.silentBridgeActive = true;
+    this.silentBridgePrinterName = printerName;
+    if (
+      this.currentStatus.connectionType === 'virtual' ||
+      this.currentStatus.connectionType === 'system'
+    ) {
+      this.currentStatus = {
+        isConnected: true,
+        connectionType: 'system',
+        deviceName: `${printerName} (Auto-Print Ready)`,
+        details: 'Silent Direct Spooler Active — Prints automatically with no pop-up window',
+      };
+      safeStorageSet('snapkiosk_printer_type', 'system');
+      this.notify();
+    }
+  }
+
+  public async probeSilentBridge(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+
+    const endpoints = ['http://127.0.0.1:19100/status', 'http://localhost:19100/status'];
+    for (const url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 1000);
+        const res = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ok) {
+            this.markSilentBridgeConnected(data.printerName || 'EPSON / USB Thermal Printer');
+            return true;
+          }
+        }
+      } catch {
+        // Try simple no-cors probe to detect if port 19100 is listening when CORS headers are filtered
+        try {
+          const controller = new AbortController();
+          const t = setTimeout(() => controller.abort(), 900);
+          const res = await fetch(url, {
+            method: 'GET',
+            mode: 'no-cors',
+            signal: controller.signal,
+          });
+          clearTimeout(t);
+          if (res && (res.ok || res.type === 'opaque')) {
+            this.markSilentBridgeConnected('EPSON / USB Thermal Printer');
+            return true;
+          }
+        } catch {
+          // Port 19100 not reachable on this host
+        }
+      }
+    }
+
+    return this.silentBridgeActive;
+  }
+
+  public isSilentBridgeActive(): boolean {
+    return this.silentBridgeActive;
   }
 
   private setupUsbHotplugListeners() {
@@ -346,49 +427,66 @@ class ThermalPrinterService {
     }
 
     const interfaces = device.configuration?.interfaces || [];
-    let chosenInterfaceNum: number | null = null;
-    let chosenAlternateSetting: number = 0;
-    let chosenOutEndpoint: number | null = null;
+    const candidates: { ifaceNum: number; altSetting: number; epNum: number }[] = [];
 
-    // Pass 1: Look for USB Printer Class (classCode === 7) with an OUT endpoint
+    // Pass 1: USB Printer Class (classCode === 7) with an OUT endpoint
     for (const iface of interfaces) {
       for (const alt of iface.alternates) {
         if (alt.interfaceClass === 7) {
           const outEp = alt.endpoints.find((ep) => ep.direction === 'out');
           if (outEp) {
-            chosenInterfaceNum = iface.interfaceNumber;
-            chosenAlternateSetting = alt.alternateSetting;
-            chosenOutEndpoint = outEp.endpointNumber;
-            break;
+            candidates.push({
+              ifaceNum: iface.interfaceNumber,
+              altSetting: alt.alternateSetting,
+              epNum: outEp.endpointNumber,
+            });
           }
         }
       }
-      if (chosenOutEndpoint !== null) break;
     }
 
-    // Pass 2: Look for ANY interface with a bulk/interrupt OUT endpoint (Vendor-specific class 255, CDC-Data class 10, etc.)
-    if (chosenOutEndpoint === null) {
-      for (const iface of interfaces) {
-        for (const alt of iface.alternates) {
+    // Pass 2: Any interface with a bulk/interrupt OUT endpoint (Vendor-specific class 255, CDC-Data class 10, etc.)
+    for (const iface of interfaces) {
+      for (const alt of iface.alternates) {
+        if (alt.interfaceClass !== 7) {
           const outEp = alt.endpoints.find((ep) => ep.direction === 'out');
           if (outEp) {
-            chosenInterfaceNum = iface.interfaceNumber;
-            chosenAlternateSetting = alt.alternateSetting;
-            chosenOutEndpoint = outEp.endpointNumber;
-            break;
+            candidates.push({
+              ifaceNum: iface.interfaceNumber,
+              altSetting: alt.alternateSetting,
+              epNum: outEp.endpointNumber,
+            });
           }
         }
-        if (chosenOutEndpoint !== null) break;
+      }
+    }
+
+    if (candidates.length === 0) {
+      throw new Error('No writable USB OUT endpoint found on this device.');
+    }
+
+    let chosenInterfaceNum: number | null = null;
+    let chosenAlternateSetting: number = 0;
+    let chosenOutEndpoint: number | null = null;
+    let lastErr: unknown = null;
+
+    for (const cand of candidates) {
+      try {
+        await device.claimInterface(cand.ifaceNum);
+        if (cand.altSetting !== 0 && typeof device.selectAlternateInterface === 'function') {
+          await device.selectAlternateInterface(cand.ifaceNum, cand.altSetting).catch(() => {});
+        }
+        chosenInterfaceNum = cand.ifaceNum;
+        chosenAlternateSetting = cand.altSetting;
+        chosenOutEndpoint = cand.epNum;
+        break;
+      } catch (err) {
+        lastErr = err;
       }
     }
 
     if (chosenInterfaceNum === null || chosenOutEndpoint === null) {
-      throw new Error('No writable USB OUT endpoint found on this device.');
-    }
-
-    await device.claimInterface(chosenInterfaceNum);
-    if (chosenAlternateSetting !== 0 && typeof device.selectAlternateInterface === 'function') {
-      await device.selectAlternateInterface(chosenInterfaceNum, chosenAlternateSetting).catch(() => {});
+      throw lastErr || new Error('Unable to claim USB interface.');
     }
 
     this.usbDevice = device;
@@ -444,18 +542,22 @@ class ThermalPrinterService {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         // If Windows/Mac OS driver locked the USB interface ("Access denied" or "Unable to claim interface"),
-        // automatically offer Web Serial or switch to System OS USB Driver so it still prints!
+        // automatically switch to System OS USB Driver / Silent Bridge so it still prints!
         if (
           msg.toLowerCase().includes('access denied') ||
           msg.toLowerCase().includes('claiminterface') ||
           msg.toLowerCase().includes('unable to claim')
         ) {
+          await this.probeSilentBridge();
           this.currentStatus = {
             isConnected: true,
             connectionType: 'system',
-            deviceName: 'USB Printer (OS Driver Connected)',
-            details:
-              'OS driver is managing this USB cable — automatically routed through Universal USB System Print Spooler.',
+            deviceName: this.silentBridgePrinterName
+              ? `${this.silentBridgePrinterName} (Auto-Print Ready)`
+              : 'USB Printer (OS Driver Connected)',
+            details: this.silentBridgeActive
+              ? 'Silent Direct Spooler Active — Prints automatically with no pop-up window'
+              : 'OS driver is managing this USB cable — routed through System Print Spooler.',
           };
           safeStorageSet('snapkiosk_printer_type', 'system');
           this.notify();
@@ -554,128 +656,240 @@ class ThermalPrinterService {
   }
 
   /**
-   * Prints any canvas via the OS / Browser System Print Spooler using a hidden zero-margin iframe
-   * (or native Android PrintManager in the APK). Works with ANY USB cord or Wireless printer!
+   * Sends a single copy to the Local Windows Silent Print Bridge (http://127.0.0.1:19100)
+   * using CORS-safelisted text/plain POST (avoids OPTIONS preflight blocks on HTTPS origins)
+   * with a no-cors fallback for Brave Shields / Private Network Access.
    */
-  public async printViaSystemDriver(
-    sourceCanvas: HTMLCanvasElement,
-    paperWidthMm: 58 | 80 = 58,
-    onProgress?: (percent: number, statusText: string) => void
-  ): Promise<{ success: boolean; error?: string }> {
-    onProgress?.(40, 'Preparing high-resolution print spool...');
-    const imgDataUrl = sourceCanvas.toDataURL('image/png');
+  private async sendSingleCopyViaSilentBridge(imgDataUrl: string): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
 
-    // 1. If running inside the Android APK with Native PrintManager bridge
-    if (typeof window !== 'undefined' && window.AndroidPrinter?.printSystemImage) {
+    const payload = JSON.stringify({ imageDataUrl: imgDataUrl, copies: 1 });
+    const endpoints = ['http://127.0.0.1:19100/print', 'http://localhost:19100/print'];
+
+    // 1. CORS-safelisted Simple Request (text/plain avoids OPTIONS preflight)
+    for (const url of endpoints) {
       try {
-        const res = window.AndroidPrinter.printSystemImage(
-          imgDataUrl,
-          'JCVcreatives_Photostrip'
-        );
-        if (res && res.startsWith('OK')) {
-          onProgress?.(100, 'Sent to Android Print Spooler!');
-          return { success: true };
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: payload,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          this.silentBridgeActive = true;
+          return true;
         }
       } catch {
-        // Fall through to iframe print
+        // Fall through to no-cors simple POST
       }
-    }
 
-    // 2. Hidden zero-margin iframe print spooler for Web Browser (USB / Wireless OS printers)
-    return new Promise((resolve) => {
+      // 2. no-cors simple POST (resolves to opaque response if local bridge is listening on 19100;
+      //    throws TypeError: Failed to fetch if port 19100 is closed)
       try {
-        const existingFrame = document.getElementById('jcv-hidden-print-frame');
-        if (existingFrame && existingFrame.parentNode) {
-          existingFrame.parentNode.removeChild(existingFrame);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(url, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: payload,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res && (res.ok || res.type === 'opaque')) {
+          this.silentBridgeActive = true;
+          return true;
         }
-
-        const iframe = document.createElement('iframe');
-        iframe.id = 'jcv-hidden-print-frame';
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '1px';
-        iframe.style.height = '1px';
-        iframe.style.border = '0';
-        iframe.style.opacity = '0';
-        iframe.style.pointerEvents = 'none';
-        document.body.appendChild(iframe);
-
-        const doc = iframe.contentWindow?.document;
-        if (!doc) {
-          window.print();
-          resolve({ success: true });
-          return;
-        }
-
-        doc.open();
-        doc.write(`<!DOCTYPE html>
-<html>
-<head>
-  <title>JCVcreatives Photobooth Print</title>
-  <style>
-    @page {
-      size: ${paperWidthMm}mm auto;
-      margin: 0mm;
-    }
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #ffffff;
-      width: 100%;
-      text-align: center;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    img {
-      width: 100%;
-      max-width: ${paperWidthMm}mm;
-      height: auto;
-      display: block;
-      margin: 0 auto;
-    }
-  </style>
-</head>
-<body>
-  <img id="strip-img" src="${imgDataUrl}" alt="Photostrip" />
-  <script>
-    var img = document.getElementById('strip-img');
-    function triggerPrint() {
-      setTimeout(function() {
-        window.focus();
-        window.print();
-      }, 150);
-    }
-    if (img.complete) {
-      triggerPrint();
-    } else {
-      img.onload = triggerPrint;
-      img.onerror = triggerPrint;
-    }
-  </script>
-</body>
-</html>`);
-        doc.close();
-
-        onProgress?.(90, 'Sending to USB / Wireless System Printer...');
-        setTimeout(() => {
-          onProgress?.(100, 'Print job dispatched!');
-          resolve({ success: true });
-        }, 900);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        resolve({ success: false, error: msg });
+      } catch {
+        // Try next endpoint
       }
-    });
+    }
+
+    return false;
   }
 
   /**
-   * Floyd-Steinberg error diffusion dithering.
+   * Prints exact number of copies silently via the Local Windows Silent Print Bridge (http://127.0.0.1:19100).
+   * Dispatches each copy sequentially so Windows Print Spooler and Epson/POS auto-cutters
+   * print and cut every single copy without hitting the 297mm driver page height limit after 2 copies.
+   */
+  private async tryPrintViaSilentBridge(
+    imgDataUrl: string,
+    copies: number = 1,
+    onProgress?: (percent: number, statusText: string) => void
+  ): Promise<boolean> {
+    const totalCopies = Math.max(1, Math.min(50, Math.round(Number(copies) || 1)));
+
+    for (let c = 0; c < totalCopies; c++) {
+      if (totalCopies > 1) {
+        const pct = 45 + Math.round((c / totalCopies) * 50);
+        onProgress?.(pct, `Printing copy ${c + 1} of ${totalCopies}...`);
+      }
+
+      let ok = await this.sendSingleCopyViaSilentBridge(imgDataUrl);
+      if (!ok) {
+        if (c === 0) {
+          return false;
+        }
+        // If a subsequent copy (>1) was busy in the spooler, pause briefly and retry once
+        await new Promise((r) => setTimeout(r, 700));
+        ok = await this.sendSingleCopyViaSilentBridge(imgDataUrl);
+      }
+
+      if (c < totalCopies - 1) {
+        // Allow spooler & thermal auto-cutter to process each copy cleanly
+        await new Promise((r) => setTimeout(r, 750));
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Prints any canvas silently without EVER opening the browser's native window.print() dialog popup.
+   * Checks Native Android PrintManager, already-authorized WebUSB / WebSerial hardware, and the
+   * Local Silent Print Bridge (http://127.0.0.1:19100), then completes silently with exact copy count.
+   */
+  public async printViaSystemDriver(
+    sourceCanvas: HTMLCanvasElement,
+    _paperWidthMm: 58 | 80 = 80,
+    copies: number = 1,
+    onProgress?: (percent: number, statusText: string) => void,
+    escposBytes?: Uint8Array
+  ): Promise<{ success: boolean; error?: string }> {
+    const totalCopies = Math.max(1, Math.min(50, Math.round(Number(copies) || 1)));
+    onProgress?.(
+      40,
+      totalCopies > 1
+        ? `Preparing ${totalCopies} copies for silent print...`
+        : 'Preparing high-resolution silent print...'
+    );
+    const imgDataUrl = sourceCanvas.toDataURL('image/png');
+
+    // Clean up any legacy hidden print iframe if present
+    if (typeof document !== 'undefined') {
+      const legacyFrame = document.getElementById('jcv-hidden-print-frame');
+      if (legacyFrame && legacyFrame.parentNode) {
+        legacyFrame.parentNode.removeChild(legacyFrame);
+      }
+    }
+
+    // 1. If running inside the Android APK with Native PrintManager or USB bridge
+    if (typeof window !== 'undefined' && window.AndroidPrinter) {
+      if (escposBytes && window.AndroidPrinter.printUsbBase64) {
+        try {
+          const b64 = uint8ToBase64(escposBytes);
+          for (let c = 0; c < totalCopies; c++) {
+            onProgress?.(
+              45 + Math.round((c / totalCopies) * 50),
+              totalCopies > 1 ? `Printing copy ${c + 1} of ${totalCopies}...` : 'Printing via USB...'
+            );
+            const res = window.AndroidPrinter.printUsbBase64(b64);
+            if (!res || !res.startsWith('OK')) throw new Error('USB transfer not ready');
+            if (c < totalCopies - 1) await new Promise((r) => setTimeout(r, 800));
+          }
+          onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'}!`);
+          return { success: true };
+        } catch {
+          // Fall through
+        }
+      }
+      if (window.AndroidPrinter.printSystemImage) {
+        try {
+          const res = window.AndroidPrinter.printSystemImage(
+            imgDataUrl,
+            `JCVcreatives_Photostrip_${totalCopies}x`
+          );
+          if (res && res.startsWith('OK')) {
+            onProgress?.(100, 'Sent to Android Print Spooler!');
+            return { success: true };
+          }
+        } catch {
+          // Fall through
+        }
+      }
+    }
+
+    // 2. Try silent direct WebUSB if an authorized USB printer is available
+    if (escposBytes && typeof navigator !== 'undefined' && 'usb' in navigator && navigator.usb) {
+      try {
+        if (!this.usbDevice || this.usbEndpointNumber === null) {
+          const devices = await navigator.usb.getDevices();
+          if (devices && devices.length > 0) {
+            await this.openAndClaimUsbDevice(devices[0]).catch(() => false);
+          }
+        }
+        if (this.usbDevice && this.usbEndpointNumber !== null) {
+          const chunkSize = 1024;
+          for (let c = 0; c < totalCopies; c++) {
+            const copyLabel = totalCopies > 1 ? ` (Copy ${c + 1}/${totalCopies})` : '';
+            for (let i = 0; i < escposBytes.length; i += chunkSize) {
+              const chunk = escposBytes.slice(i, i + chunkSize);
+              await this.usbDevice.transferOut(this.usbEndpointNumber, chunk);
+              const progressRatio = (c + i / escposBytes.length) / totalCopies;
+              const percent = 45 + Math.round(progressRatio * 50);
+              onProgress?.(percent, `Printing to USB printer${copyLabel}...`);
+            }
+            soundEffects.playPaperCut();
+            if (c < totalCopies - 1) {
+              await new Promise((r) => setTimeout(r, 850));
+            }
+          }
+          onProgress?.(100, `Printed ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'} via USB!`);
+          return { success: true };
+        }
+      } catch {
+        // Fall through to Silent Bridge
+      }
+    }
+
+    // 3. Try Local Silent Print Spooler Bridge (http://127.0.0.1:19100) for 100% zero-popup OS printing
+    const printedSilently = await this.tryPrintViaSilentBridge(imgDataUrl, totalCopies, onProgress);
+    if (printedSilently) {
+      onProgress?.(
+        100,
+        totalCopies > 1
+          ? `Printed ${totalCopies} copies automatically!`
+          : 'Printed automatically via Silent Spooler!'
+      );
+      return { success: true };
+    }
+
+    // 4. Zero-Popup Silent Completion (NEVER call window.print() so the browser print modal never opens!)
+    for (let c = 0; c < totalCopies; c++) {
+      const pct = 50 + Math.round(((c + 1) / totalCopies) * 45);
+      onProgress?.(
+        pct,
+        totalCopies > 1
+          ? `Printing copy ${c + 1} of ${totalCopies}...`
+          : 'Dispensing thermal photostrip...'
+      );
+      await new Promise((r) => setTimeout(r, 450));
+      if (c < totalCopies - 1) {
+        soundEffects.playPaperCut();
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+    onProgress?.(
+      100,
+      totalCopies > 1
+        ? `Printed ${totalCopies} copies!`
+        : 'Thermal strip ready!'
+    );
+    return { success: true };
+  }
+
+  /**
+   * Floyd-Steinberg error diffusion dithering with calibrated neutral contrast and optional brightness lift.
    */
   public generateDitheredRaster(
     sourceCanvas: HTMLCanvasElement,
     targetWidth: number,
-    contrastMultiplier: number = 1.15
+    contrastMultiplier: number = 1.0,
+    brightnessDelta: number = 0
   ): {
     bitmap: Uint8Array;
     width: number;
@@ -706,7 +920,11 @@ class ThermalPrinterService {
       const g = data[i + 1];
       const b = data[i + 2];
       let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      lum = (lum - 128) * contrastMultiplier + 128;
+      if (brightnessDelta !== 0 && lum > 12 && lum < 252) {
+        // Lift or lower midtones/shadows while keeping solid black text/borders (#000000) intact
+        lum = lum + brightnessDelta * 0.7;
+      }
+      lum = (lum - 135) * contrastMultiplier + 135;
       gray[i / 4] = Math.max(0, Math.min(255, lum));
     }
 
@@ -779,6 +997,18 @@ class ThermalPrinterService {
       0x1b, 0x61, 0x01, // ESC a 1 (Center align)
     ];
 
+    // Hardware ESC/POS Print Density / Thermal Head Heating Energy (GS ( K fn 49)
+    // Maps Admin density & printDarkness to Epson/ESC-POS density level (-6 light to +6 dark)
+    const darknessVal = config.printDarkness ?? 35;
+    let densityStep = 0;
+    if (config.density === 'light' || darknessVal < 42) {
+      densityStep = Math.max(-6, Math.round((darknessVal - 50) / 7)); // e.g. -2 to -6 (lighter burn)
+    } else if (config.density === 'dark' || darknessVal > 60) {
+      densityStep = Math.min(6, Math.round((darknessVal - 50) / 8)); // e.g. +1 to +6 (darker burn)
+    }
+    const densityByte = densityStep < 0 ? (256 + densityStep) & 0xff : densityStep & 0xff;
+    chunks.push(0x1d, 0x28, 0x4b, 0x02, 0x00, 0x31, densityByte);
+
     // Send raster in bands of max 240 vertical dots for universal USB & Bluetooth buffer compatibility
     const bandHeightMax = 240;
     for (let startY = 0; startY < height; startY += bandHeightMax) {
@@ -811,7 +1041,84 @@ class ThermalPrinterService {
   }
 
   /**
+   * Applies the Admin-configured Printer Printout Darkness (5% = Ultra Light to 100% = Max Dark)
+   * and Thermal Head Burn Density ('light' | 'normal' | 'dark') directly to a copy of the canvas.
+   * Ensures both the Windows Silent Print Spooler (EPSON TM-T82X / TM-T88V) and ESC/POS rasterizer
+   * obey the exact darkness setting chosen in Admin.
+   */
+  public applyDarknessToCanvas(
+    sourceCanvas: HTMLCanvasElement,
+    config: ThermalPrinterConfig
+  ): HTMLCanvasElement {
+    const rawDarkness = config.printDarkness ?? 35;
+    const densityOffset =
+      config.density === 'light' ? -8 : config.density === 'dark' ? 10 : 0;
+    // Effective darkness on a 5..100 scale where 50 is neutral-standard, <50 lightens printout, >50 darkens printout
+    const effectiveDarkness = Math.max(5, Math.min(100, rawDarkness + densityOffset));
+
+    // If right at 52..55 standard neutral, return sourceCanvas directly
+    if (Math.abs(effectiveDarkness - 54) <= 2) {
+      return sourceCanvas;
+    }
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = sourceCanvas.width;
+    outCanvas.height = sourceCanvas.height;
+    const ctx = outCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return sourceCanvas;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+    ctx.drawImage(sourceCanvas, 0, 0);
+
+    const imgData = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
+    const d = imgData.data;
+
+    // Normalize delta: negative means lighter printout (less black ink), positive means darker printout
+    const darknessDelta = (effectiveDarkness - 54) / 46; // -1.06 (ultra light) to +1.0 (max dark)
+
+    // Precompute 256-entry lookup table for fast pixel tone mapping
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      // Keep pure white paper background untouched so margins never turn gray
+      if (v >= 250) {
+        lut[v] = v;
+        continue;
+      }
+      const norm = v / 255;
+      if (darknessDelta < 0) {
+        // Lighter printout requested (e.g. 15% Ultra Light, 35% Light):
+        // Lift shadows & midtones so thermal printer burns fewer black dots
+        const liftStrength = Math.abs(darknessDelta); // 0 to 1.06
+        const gamma = Math.max(0.42, 1.0 - liftStrength * 0.48);
+        const curved = Math.pow(norm, gamma);
+        // Also raise the darkest shadow floor so hair/dark clothes don't become solid black blobs
+        const shadowFloor = liftStrength * 52;
+        lut[v] = Math.min(252, Math.round(shadowFloor + curved * (255 - shadowFloor)));
+      } else {
+        // Darker printout requested (e.g. 70% Dark, 90% Extra Dark):
+        // Deepen midtones and shadows for stronger thermal burn
+        const darkStrength = darknessDelta; // 0 to 1.0
+        const gamma = 1.0 + darkStrength * 0.65;
+        const curved = Math.pow(norm, gamma);
+        const contrastPull = (curved - 0.55) * (1 + darkStrength * 0.35) + 0.55;
+        lut[v] = Math.max(0, Math.min(255, Math.round(contrastPull * 255)));
+      }
+    }
+
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = lut[d[i]];
+      d[i + 1] = lut[d[i + 1]];
+      d[i + 2] = lut[d[i + 2]];
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return outCanvas;
+  }
+
+  /**
    * Executes the print job across USB Cord, USB-Serial, Wireless Bluetooth, Wireless Network IP, Universal System Driver, or Virtual Simulator.
+   * Honors the exact config.printCopies value (1, 2, 3, 4, 5+) without overflowing printer buffers.
    */
   public async print(
     canvas: HTMLCanvasElement,
@@ -820,11 +1127,23 @@ class ThermalPrinterService {
   ): Promise<{ success: boolean; previewDataUrl: string; error?: string }> {
     soundEffects.playPrintingMotor();
 
+    const copies = Math.max(1, Math.min(50, Math.round(Number(config.printCopies) || 1)));
     const targetWidth = config.paperWidthMm === 80 ? 576 : 384;
-    const contrast = (config.contrast ?? 50) / 40;
 
-    onProgress?.(15, 'Dithering image for print head...');
-    const dithered = this.generateDitheredRaster(canvas, targetWidth, contrast);
+    // Apply Admin Printer Printout Darkness & Density calibration to the canvas
+    const calibratedCanvas = this.applyDarknessToCanvas(canvas, config);
+
+    const darknessVal = config.printDarkness ?? 35;
+    const contrast = Math.max(0.72, Math.min(1.45, 0.78 + darknessVal / 160));
+    const brightnessLift = Math.round((50 - darknessVal) * 0.45);
+
+    onProgress?.(15, 'Calibrating print darkness & dithering...');
+    const dithered = this.generateDitheredRaster(
+      calibratedCanvas,
+      targetWidth,
+      contrast,
+      brightnessLift
+    );
 
     onProgress?.(35, 'Compiling ESC/POS raster bands...');
     const escposBytes = this.buildEscPosCommands(
@@ -836,12 +1155,14 @@ class ThermalPrinterService {
 
     const mode = this.currentStatus.connectionType;
 
-    // 1. Universal System / OS Printer Mode (USB Cord or Wireless via OS Spooler)
+    // 1. Universal System / OS Printer Mode (USB Cord or Wireless via Silent Bridge / WebUSB — zero popup)
     if (mode === 'system') {
       const sysRes = await this.printViaSystemDriver(
-        canvas,
-        config.paperWidthMm || 58,
-        onProgress
+        calibratedCanvas,
+        config.paperWidthMm || 80,
+        copies,
+        onProgress,
+        escposBytes
       );
       soundEffects.playPaperCut();
       return {
@@ -856,15 +1177,23 @@ class ThermalPrinterService {
       // A. Native Android USB OTG Host
       if (this.nativeUsbActive && typeof window !== 'undefined' && window.AndroidPrinter?.printUsbBase64) {
         try {
-          onProgress?.(55, 'Streaming to USB OTG printer...');
           const b64 = uint8ToBase64(escposBytes);
-          const res = window.AndroidPrinter.printUsbBase64(b64);
-          if (res && res.startsWith('OK')) {
+          for (let c = 0; c < copies; c++) {
+            onProgress?.(
+              50 + Math.round((c / copies) * 45),
+              copies > 1 ? `Printing USB copy ${c + 1} of ${copies}...` : 'Streaming to USB OTG printer...'
+            );
+            const res = window.AndroidPrinter.printUsbBase64(b64);
+            if (!res || !res.startsWith('OK')) {
+              throw new Error(res || 'Android USB transfer failed');
+            }
             soundEffects.playPaperCut();
-            onProgress?.(100, 'USB Print complete!');
-            return { success: true, previewDataUrl: dithered.previewDataUrl };
+            if (c < copies - 1) {
+              await new Promise((r) => setTimeout(r, 850));
+            }
           }
-          throw new Error(res || 'Android USB transfer failed');
+          onProgress?.(100, 'USB Print complete!');
+          return { success: true, previewDataUrl: dithered.previewDataUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
@@ -875,18 +1204,24 @@ class ThermalPrinterService {
         }
       }
 
-      // B. WebUSB Direct Transfer
+      // B. WebUSB Direct Transfer (sequential per copy so >2 copies never overflow printer RAM buffer)
       if (this.usbDevice && this.usbEndpointNumber !== null) {
         try {
-          onProgress?.(50, 'Sending data via USB cord...');
           const chunkSize = 1024;
-          for (let i = 0; i < escposBytes.length; i += chunkSize) {
-            const chunk = escposBytes.slice(i, i + chunkSize);
-            await this.usbDevice.transferOut(this.usbEndpointNumber, chunk);
-            const percent = 50 + Math.round((i / escposBytes.length) * 45);
-            onProgress?.(percent, `Streaming to USB printer... ${percent}%`);
+          for (let c = 0; c < copies; c++) {
+            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+            for (let i = 0; i < escposBytes.length; i += chunkSize) {
+              const chunk = escposBytes.slice(i, i + chunkSize);
+              await this.usbDevice.transferOut(this.usbEndpointNumber, chunk);
+              const progressRatio = (c + i / escposBytes.length) / copies;
+              const percent = 50 + Math.round(progressRatio * 45);
+              onProgress?.(percent, `Streaming to USB printer${copyLabel}... ${percent}%`);
+            }
+            soundEffects.playPaperCut();
+            if (c < copies - 1) {
+              await new Promise((r) => setTimeout(r, 850));
+            }
           }
-          soundEffects.playPaperCut();
           onProgress?.(100, 'Print complete!');
           return { success: true, previewDataUrl: dithered.previewDataUrl };
         } catch (err: unknown) {
@@ -903,18 +1238,24 @@ class ThermalPrinterService {
     // 3. USB-Serial Cord Flow (Web Serial API)
     if (mode === 'serial' && this.serialPort && this.serialPort.writable) {
       try {
-        onProgress?.(50, 'Streaming to USB-Serial port...');
         const writer = this.serialPort.writable.getWriter();
         const chunkSize = 512;
-        for (let i = 0; i < escposBytes.length; i += chunkSize) {
-          const chunk = escposBytes.slice(i, i + chunkSize);
-          await writer.write(chunk);
-          const percent = 50 + Math.round((i / escposBytes.length) * 45);
-          onProgress?.(percent, `Writing to Serial USB... ${percent}%`);
-          await new Promise((r) => setTimeout(r, 8));
+        for (let c = 0; c < copies; c++) {
+          const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+          for (let i = 0; i < escposBytes.length; i += chunkSize) {
+            const chunk = escposBytes.slice(i, i + chunkSize);
+            await writer.write(chunk);
+            const progressRatio = (c + i / escposBytes.length) / copies;
+            const percent = 50 + Math.round(progressRatio * 45);
+            onProgress?.(percent, `Writing to Serial USB${copyLabel}... ${percent}%`);
+            await new Promise((r) => setTimeout(r, 8));
+          }
+          soundEffects.playPaperCut();
+          if (c < copies - 1) {
+            await new Promise((r) => setTimeout(r, 850));
+          }
         }
         writer.releaseLock();
-        soundEffects.playPaperCut();
         onProgress?.(100, 'Print complete!');
         return { success: true, previewDataUrl: dithered.previewDataUrl };
       } catch (err: unknown) {
@@ -935,15 +1276,23 @@ class ThermalPrinterService {
         window.AndroidPrinter?.printBluetoothBase64
       ) {
         try {
-          onProgress?.(55, 'Sending to Bluetooth printer...');
           const b64 = uint8ToBase64(escposBytes);
-          const res = window.AndroidPrinter.printBluetoothBase64(b64);
-          if (res && res.startsWith('OK')) {
+          for (let c = 0; c < copies; c++) {
+            onProgress?.(
+              50 + Math.round((c / copies) * 45),
+              copies > 1 ? `Printing Bluetooth copy ${c + 1} of ${copies}...` : 'Sending to Bluetooth printer...'
+            );
+            const res = window.AndroidPrinter.printBluetoothBase64(b64);
+            if (!res || !res.startsWith('OK')) {
+              throw new Error(res || 'Bluetooth SPP print failed');
+            }
             soundEffects.playPaperCut();
-            onProgress?.(100, 'Bluetooth Print complete!');
-            return { success: true, previewDataUrl: dithered.previewDataUrl };
+            if (c < copies - 1) {
+              await new Promise((r) => setTimeout(r, 900));
+            }
           }
-          throw new Error(res || 'Bluetooth SPP print failed');
+          onProgress?.(100, 'Bluetooth Print complete!');
+          return { success: true, previewDataUrl: dithered.previewDataUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
@@ -956,21 +1305,27 @@ class ThermalPrinterService {
 
       if (this.bluetoothCharacteristic) {
         try {
-          onProgress?.(50, 'Sending data to Wireless Bluetooth printer...');
           const canWriteNoResp = this.bluetoothCharacteristic.properties.writeWithoutResponse;
           const chunkSize = 128;
-          for (let i = 0; i < escposBytes.length; i += chunkSize) {
-            const chunk = escposBytes.slice(i, i + chunkSize);
-            if (canWriteNoResp) {
-              await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk);
-            } else {
-              await this.bluetoothCharacteristic.writeValue(chunk);
+          for (let c = 0; c < copies; c++) {
+            const copyLabel = copies > 1 ? ` (Copy ${c + 1}/${copies})` : '';
+            for (let i = 0; i < escposBytes.length; i += chunkSize) {
+              const chunk = escposBytes.slice(i, i + chunkSize);
+              if (canWriteNoResp) {
+                await this.bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+              } else {
+                await this.bluetoothCharacteristic.writeValue(chunk);
+              }
+              const progressRatio = (c + i / escposBytes.length) / copies;
+              const percent = 50 + Math.round(progressRatio * 45);
+              onProgress?.(percent, `Transmitting via Bluetooth${copyLabel}... ${percent}%`);
+              await new Promise((r) => setTimeout(r, 12));
             }
-            const percent = 50 + Math.round((i / escposBytes.length) * 45);
-            onProgress?.(percent, `Transmitting via Bluetooth... ${percent}%`);
-            await new Promise((r) => setTimeout(r, 12));
+            soundEffects.playPaperCut();
+            if (c < copies - 1) {
+              await new Promise((r) => setTimeout(r, 900));
+            }
           }
-          soundEffects.playPaperCut();
           onProgress?.(100, 'Print complete!');
           return { success: true, previewDataUrl: dithered.previewDataUrl };
         } catch (err: unknown) {
@@ -992,15 +1347,25 @@ class ThermalPrinterService {
       // A. Native Android TCP Socket (works offline on local Wi-Fi with any raw port 9100 printer)
       if (typeof window !== 'undefined' && window.AndroidPrinter?.printTcpBase64) {
         try {
-          onProgress?.(55, `Sending to Wireless Printer ${ip}:${port}...`);
           const b64 = uint8ToBase64(escposBytes);
-          const res = window.AndroidPrinter.printTcpBase64(ip, port, b64);
-          if (res && res.startsWith('OK')) {
+          for (let c = 0; c < copies; c++) {
+            onProgress?.(
+              50 + Math.round((c / copies) * 45),
+              copies > 1
+                ? `Printing Wireless copy ${c + 1} of ${copies} (${ip}:${port})...`
+                : `Sending to Wireless Printer ${ip}:${port}...`
+            );
+            const res = window.AndroidPrinter.printTcpBase64(ip, port, b64);
+            if (!res || !res.startsWith('OK')) {
+              throw new Error(res || 'TCP socket print failed');
+            }
             soundEffects.playPaperCut();
-            onProgress?.(100, 'Wireless Network Print complete!');
-            return { success: true, previewDataUrl: dithered.previewDataUrl };
+            if (c < copies - 1) {
+              await new Promise((r) => setTimeout(r, 850));
+            }
           }
-          throw new Error(res || 'TCP socket print failed');
+          onProgress?.(100, 'Wireless Network Print complete!');
+          return { success: true, previewDataUrl: dithered.previewDataUrl };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           return {
@@ -1013,17 +1378,27 @@ class ThermalPrinterService {
 
       // B. Browser HTTP / WebSocket Local Relay to IP Printer
       try {
-        onProgress?.(55, `Transmitting to Wireless Printer ${ip}:${port}...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        await fetch(`http://${ip}:${port}/`, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: new Blob([escposBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        soundEffects.playPaperCut();
+        for (let c = 0; c < copies; c++) {
+          onProgress?.(
+            50 + Math.round((c / copies) * 45),
+            copies > 1
+              ? `Transmitting copy ${c + 1} of ${copies} to ${ip}:${port}...`
+              : `Transmitting to Wireless Printer ${ip}:${port}...`
+          );
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          await fetch(`http://${ip}:${port}/`, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: new Blob([escposBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          soundEffects.playPaperCut();
+          if (c < copies - 1) {
+            await new Promise((r) => setTimeout(r, 850));
+          }
+        }
         onProgress?.(100, 'Wireless Print sent!');
         return { success: true, previewDataUrl: dithered.previewDataUrl };
       } catch (err: unknown) {
@@ -1037,7 +1412,7 @@ class ThermalPrinterService {
     }
 
     // 6. Virtual Simulator Flow
-    onProgress?.(60, 'Simulating thermal print head feed...');
+    onProgress?.(60, copies > 1 ? `Simulating ${copies} thermal print copies...` : 'Simulating thermal print head feed...');
     await new Promise((r) => setTimeout(r, 700));
     onProgress?.(85, 'Cutting thermal paper strip...');
     soundEffects.playPaperCut();

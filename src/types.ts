@@ -104,6 +104,9 @@ export interface PhotostripResult {
   eventTitle: string;
   shareCode: string;
   shareUrl: string;
+  printCopies?: number;
+  thermalBrightness?: number;
+  stickers?: StickerItem[];
 }
 
 export interface Voucher {
@@ -144,7 +147,9 @@ export interface ThermalPrinterConfig {
   deviceName?: string;
   paperWidthMm: 58 | 80;
   dotsPerLine: 384 | 576;
-  contrast: number; // 0 to 100 (50 default)
+  contrast: number; // 0 to 100 (40 default)
+  brightness?: number; // -30 to 100 (45 default for bright thermal portrait exposure)
+  printDarkness?: number; // 5 to 100 (35 default — controls overall printer printout darkness)
   autoCut: boolean;
   printCopies: number;
   feedLines: number;

@@ -34,6 +34,9 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
   onClose,
 }) => {
   const [paperWidthMm, setPaperWidthMm] = useState<58 | 80>(currentConfig.paperWidthMm || 58);
+  const [printCopies, setPrintCopies] = useState<number>(
+    Math.max(1, Math.min(20, Math.round(Number(currentConfig.printCopies) || 1)))
+  );
   const [alignment, setAlignment] = useState<'left' | 'center' | 'right'>('center');
   const [scale, setScale] = useState<number>(100);
   const [offsetX, setOffsetX] = useState<number>(0);
@@ -112,6 +115,7 @@ export const ThermalPrintPreviewModal: React.FC<ThermalPrintPreviewModalProps> =
       dotsPerLine: paperWidthMm === 80 ? 576 : 384,
       contrast,
       autoCut,
+      printCopies,
     };
 
     onConfirmPrint(adjustedCanvasRef.current, updatedConfig);

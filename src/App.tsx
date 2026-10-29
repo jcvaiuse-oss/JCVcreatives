@@ -43,6 +43,12 @@ export default function App() {
   const [selectedLayout, setSelectedLayout] = useState<FrameLayoutType>('strip_3');
   const [selectedTheme, setSelectedTheme] = useState<FrameTheme>(FRAME_THEMES[0]);
   const [selectedFilter, setSelectedFilter] = useState<PhotoFilterType>('none');
+  const [selectedCopies, setSelectedCopies] = useState<number>(
+    Math.max(1, config.thermalPrinter?.printCopies || 1)
+  );
+  const [selectedBrightness, setSelectedBrightness] = useState<number>(
+    config.thermalPrinter?.brightness ?? 45
+  );
   const [capturedPhotos, setCapturedPhotos] = useState<string[]>([]);
   const [finalizedResult, setFinalizedResult] = useState<PhotostripResult | null>(null);
   const [finalizedCanvas, setFinalizedCanvas] = useState<HTMLCanvasElement | null>(null);
@@ -53,7 +59,14 @@ export default function App() {
 
   // Initialize config, telemetry, and check URL for direct mobile guest share (?share=...)
   useEffect(() => {
-    remoteConfigService.init().then(setConfig).catch(() => {});
+    remoteConfigService
+      .init()
+      .then((loadedConfig) => {
+        setConfig(loadedConfig);
+        setSelectedCopies(Math.max(1, loadedConfig.thermalPrinter?.printCopies || 1));
+        setSelectedBrightness(loadedConfig.thermalPrinter?.brightness ?? 45);
+      })
+      .catch(() => {});
     analyticsService.init().then(setTelemetry).catch(() => {});
 
     try {
@@ -79,6 +92,8 @@ export default function App() {
   // Handler: Start Session from Attract screen
   const handleStartSession = React.useCallback(() => {
     setSessionStartTime(Date.now());
+    setSelectedCopies(Math.max(1, config.thermalPrinter?.printCopies || 1));
+    setSelectedBrightness(config.thermalPrinter?.brightness ?? 45);
     soundEffects.playTap();
 
     // If free play mode active, skip payment gate straight to frame customization
@@ -87,7 +102,7 @@ export default function App() {
     } else {
       setCurrentScreen('payment');
     }
-  }, [config.freePlayMode]);
+  }, [config.freePlayMode, config.thermalPrinter?.printCopies, config.thermalPrinter?.brightness]);
 
   // Handler: Payment Succeeded
   const handlePaymentSuccess = (tx: PaymentTransaction) => {
@@ -105,23 +120,28 @@ export default function App() {
   const handlePhotostripFinalized = async (result: PhotostripResult, canvas: HTMLCanvasElement) => {
     setFinalizedResult(result);
     setFinalizedCanvas(canvas);
+    setCurrentScreen('print_share');
 
     // Save capture to local IndexedDB
-    await storageService.saveCapture(result);
+    storageService.saveCapture(result).catch(() => {});
 
     // Record session metrics in analytics
     const durationSec = Math.round((Date.now() - sessionStartTime) / 1000);
     const revenue = activePayment ? activePayment.amount : 0;
-    await analyticsService.recordSessionComplete({
-      frameThemeId: result.themeId,
-      filterId: result.filter,
-      durationSec,
-      printed: false, // will update when printed
-      revenueAdded: revenue,
-    });
-    setTelemetry({ ...analyticsService.getTelemetry() });
-
-    setCurrentScreen('print_share');
+    const copiesCount = Math.max(1, result.printCopies || selectedCopies || 1);
+    analyticsService
+      .recordSessionComplete({
+        frameThemeId: result.themeId,
+        filterId: result.filter,
+        durationSec,
+        printed: true,
+        printCopies: copiesCount,
+        revenueAdded: revenue,
+      })
+      .then(() => {
+        setTelemetry({ ...analyticsService.getTelemetry() });
+      })
+      .catch(() => {});
   };
 
   // Handler: Return to Attract / Reset
@@ -130,6 +150,7 @@ export default function App() {
     setFinalizedResult(null);
     setFinalizedCanvas(null);
     setActivePayment(null);
+    setSelectedCopies(Math.max(1, config.thermalPrinter?.printCopies || 1));
     setCurrentScreen('attract');
   };
 
@@ -181,6 +202,8 @@ export default function App() {
             onSelectTheme={setSelectedTheme}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
+            copies={selectedCopies}
+            onSelectCopies={setSelectedCopies}
             onContinue={() => setCurrentScreen('capture')}
             onBack={handleResetToAttract}
           />
@@ -203,6 +226,10 @@ export default function App() {
             layout={selectedLayout}
             initialTheme={selectedTheme}
             initialFilter={selectedFilter}
+            copies={selectedCopies}
+            onChangeCopies={setSelectedCopies}
+            brightness={selectedBrightness}
+            onChangeBrightness={setSelectedBrightness}
             onFinalized={handlePhotostripFinalized}
             onRetake={handleRetakeFromEditor}
           />
@@ -214,6 +241,7 @@ export default function App() {
             result={finalizedResult}
             canvas={finalizedCanvas}
             config={config}
+            copies={selectedCopies}
             onDone={handleResetToAttract}
             onOpenMobileShareModal={() => setShowMobileShareModal(true)}
           />
@@ -226,6 +254,12 @@ export default function App() {
           config={config}
           onUpdateConfig={(newConf) => {
             setConfig(newConf);
+            if (newConf.thermalPrinter?.brightness !== undefined) {
+              setSelectedBrightness(newConf.thermalPrinter.brightness);
+            }
+            if (newConf.thermalPrinter?.printCopies !== undefined && currentScreen === 'attract') {
+              setSelectedCopies(Math.max(1, newConf.thermalPrinter.printCopies));
+            }
             setTelemetry(analyticsService.getTelemetry());
           }}
           onClose={() => setShowAdminModal(false)}

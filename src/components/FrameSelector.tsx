@@ -23,6 +23,8 @@ interface FrameSelectorProps {
   onSelectTheme: (theme: FrameTheme) => void;
   selectedFilter: PhotoFilterType;
   onSelectFilter: (filter: PhotoFilterType) => void;
+  copies: number;
+  onSelectCopies: (copies: number) => void;
   onContinue: () => void;
   onBack: () => void;
 }
@@ -327,28 +329,53 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
       {/* Bottom Controls matching Still 44fabe33.jpeg */}
       <div className="mt-auto space-y-3.5 pt-2">
         {/* Copies Stepper */}
-        <div className="flex items-center justify-center gap-3 text-xs text-zinc-600 font-medium">
-          <span className="text-[11px] uppercase tracking-wider text-zinc-400">Print Copies</span>
-          <button
-            onClick={() => {
-              soundEffects.playTap();
-              setCopies((c) => Math.max(1, c - 1));
-            }}
-            className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 transition"
-          >
-            <Minus className="w-3 h-3" />
-          </button>
-          <span className="font-bold text-sm text-zinc-900 min-w-[14px] text-center">{copies}</span>
-          <button
-            onClick={() => {
-              soundEffects.playTap();
-              setCopies((c) => Math.min(10, c + 1));
-            }}
-            className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 transition"
-          >
-            <Plus className="w-3 h-3" />
-          </button>
-          <span className="text-zinc-400">Total P{totalPrice}</span>
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="flex items-center justify-center gap-3 text-xs text-zinc-600 font-medium">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-400">Print Copies</span>
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                onSelectCopies(Math.max(1, copies - 1));
+              }}
+              className="w-7 h-7 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <span className="font-bold text-base text-zinc-900 min-w-[20px] text-center">{copies}</span>
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                onSelectCopies(Math.min(20, copies + 1));
+              }}
+              className="w-7 h-7 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-zinc-400">Total P{totalPrice}</span>
+          </div>
+
+          {/* Quick Copy Count Pills (1 to 6+) */}
+          <div className="flex items-center justify-center gap-1.5">
+            {[1, 2, 3, 4, 5, 6].map((num) => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  onSelectCopies(num);
+                }}
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                  copies === num
+                    ? 'bg-black text-white shadow-2xs'
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                }`}
+              >
+                {num}x
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Big Black Pill Button: > Continue • P20 */}
@@ -357,7 +384,9 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
           className="w-full py-4 rounded-full bg-black hover:bg-zinc-800 text-white font-medium text-sm tracking-wide shadow-md active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
         >
           <ArrowRight className="w-4 h-4" />
-          <span>Continue • P{totalPrice}</span>
+          <span>
+            Continue ({copies} {copies === 1 ? 'Copy' : 'Copies'}) • P{totalPrice}
+          </span>
         </button>
 
         {/* Subactions: Cancel & Buy Voucher */}

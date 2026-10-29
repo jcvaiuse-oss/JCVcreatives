@@ -398,10 +398,129 @@ export function applyCanvasFilter(
 }
 
 /**
+ * Presets for adjusting physical thermal photo print brightness / lightness.
+ */
+export const THERMAL_BRIGHTNESS_PRESETS: {
+  id: string;
+  label: string;
+  shortLabel: string;
+  value: number;
+  description: string;
+}[] = [
+  {
+    id: 'darker',
+    label: 'Darker',
+    shortLabel: 'Darker',
+    value: -15,
+    description: 'Deeper blacks for outdoor or overly bright lighting',
+  },
+  {
+    id: 'standard',
+    label: 'Normal',
+    shortLabel: 'Normal',
+    value: 15,
+    description: 'Balanced tone curve for well-lit studio setups',
+  },
+  {
+    id: 'bright',
+    label: 'Bright ★',
+    shortLabel: 'Bright',
+    value: 45,
+    description: 'Recommended — lifts shadows & faces for crisp thermal receipts',
+  },
+  {
+    id: 'extra_bright',
+    label: 'Extra Bright',
+    shortLabel: 'Extra Bright',
+    value: 70,
+    description: 'High-key shadow boost for indoor rooms & dark hair/clothing',
+  },
+  {
+    id: 'max_light',
+    label: 'Max Light',
+    shortLabel: 'Max Light',
+    value: 92,
+    description: 'Maximum shadow opening for low-light camera captures',
+  },
+];
+
+/**
+ * Applies a thermal-printer-calibrated portrait tone curve to a photo region.
+ * Compensates for thermal receipt paper dot-gain (heat spread) by lifting shadows
+ * with a gamma curve, protecting a minimum shadow floor so dark hair/faces never
+ * burn into solid black blobs, and cleaning near-white highlights so backgrounds stay crisp.
+ *
+ * @param brightness -30 (Darker) to +100 (Max Light). Default is +45 (Bright).
+ */
+export function applyThermalPhotoToneCurve(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  brightness: number = 45
+) {
+  const imgData = ctx.getImageData(x, y, width, height);
+  const data = imgData.data;
+
+  const clampedBrightness = Math.max(-40, Math.min(100, Number(brightness ?? 45)));
+  const bNorm = clampedBrightness / 100; // -0.40 to +1.00
+
+  // 1. Auto-exposure analysis: measure average luminance of the subject region
+  let sumLum = 0;
+  let sampleCount = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    sumLum += lum;
+    sampleCount++;
+  }
+  const avgLum = sampleCount > 0 ? sumLum / sampleCount : 128;
+
+  // Automatic low-light compensation if the original camera capture is dark (avgLum < 120)
+  const autoLowLightBoost = avgLum < 120 ? Math.min(0.28, ((120 - avgLum) / 120) * 0.34) : 0;
+  const effectiveBNorm = Math.max(-0.4, Math.min(1.15, bNorm + autoLowLightBoost));
+
+  // 2. Gamma < 1.0 opens up dark shadows and midtones without blowing out facial details
+  const gamma = Math.max(0.25, Math.min(1.15, 0.66 - effectiveBNorm * 0.40));
+
+  // 3. Shadow floor prevents 100% solid black thermal burn in dark hair, beards, and shirts
+  const shadowFloor = Math.max(10, Math.min(110, Math.round(34 + effectiveBNorm * 58)));
+
+  // 4. White point cleans up light walls/backgrounds so they don't get peppered with gray dots
+  const whitePoint = Math.max(185, Math.min(248, Math.round(235 - Math.max(0, effectiveBNorm) * 28)));
+
+  const lut = new Uint8Array(256);
+  for (let v = 0; v < 256; v++) {
+    const n = v / 255;
+    let mapped = Math.pow(n, gamma) * 255;
+    // Gentle midtone definition around 148 so eyes and smiles remain sharp
+    mapped = (mapped - 148) * 1.05 + 148;
+    mapped += effectiveBNorm * 25;
+    if (mapped >= whitePoint) {
+      mapped = 255;
+    } else {
+      const ratio = Math.max(0, mapped) / whitePoint;
+      mapped = shadowFloor + ratio * (255 - shadowFloor);
+    }
+    lut[v] = Math.max(0, Math.min(255, Math.round(mapped)));
+  }
+
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+    const out = lut[Math.max(0, Math.min(255, gray))];
+    data[i] = out;
+    data[i + 1] = out;
+    data[i + 2] = out;
+  }
+
+  ctx.putImageData(imgData, x, y);
+}
+
+/**
  * Composite full photostrip into a high-res printable canvas.
  * When isThermalMode is true, forces pure white background (#ffffff),
- * crisp black text and borders (#000000), and high-contrast monochrome
- * filter so physical receipt printing is clean and does not waste or blacken thermal paper.
+ * crisp black text and borders (#000000), and calibrated thermal portrait
+ * tone curve so physical receipt printing is bright, detailed, and never overly dark.
  */
 export async function renderPhotostripCanvas(options: {
   photos: string[]; // image DataURLs
@@ -415,6 +534,7 @@ export async function renderPhotostripCanvas(options: {
   dateStr?: string;
   qrShareUrl?: string; // Optional QR rendered in footer
   isThermalMode?: boolean; // When true: monochrome receipt print without color frames
+  thermalBrightness?: number; // -30 to +100 (default 45 Bright)
 }): Promise<HTMLCanvasElement> {
   const {
     photos,
@@ -427,6 +547,7 @@ export async function renderPhotostripCanvas(options: {
     drawings = [],
     dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     isThermalMode = false,
+    thermalBrightness = 45,
   } = options;
 
   // Dimensions based on layout
@@ -434,8 +555,14 @@ export async function renderPhotostripCanvas(options: {
   let canvasHeight = 1800; // 1:3 ratio for classic 2x6 strip
 
   if (layout === 'grid_4') {
-    canvasWidth = 1200;
-    canvasHeight = 1800; // 4x6" postcard
+    if (photos.length <= 2) {
+      // 2-shot vertical strip ("Grid (2 shots)")
+      canvasWidth = 600;
+      canvasHeight = 1400;
+    } else {
+      canvasWidth = 1200;
+      canvasHeight = 1800; // 4x6" 2x2 postcard
+    }
   } else if (layout === 'single_polaroid') {
     canvasWidth = 800;
     canvasHeight = 1000;
@@ -573,9 +700,9 @@ export async function renderPhotostripCanvas(options: {
   );
 
   // 3. Layout Slot Calculations
-  const photoCount = loadedImages.length;
+  const photoCount = Math.max(1, loadedImages.length);
 
-  if (layout === 'strip_3' || layout === 'strip_4') {
+  if (layout === 'strip_3' || layout === 'strip_4' || (layout === 'grid_4' && photoCount <= 2)) {
     const margin = 36;
     const headerHeight = 110;
     const footerHeight = 160;
@@ -607,8 +734,12 @@ export async function renderPhotostripCanvas(options: {
       // Cover-crop the image to fill the slot perfectly
       drawImageProp(ctx, img, margin, slotY, slotWidth, slotHeight);
 
-      // Apply filter (forced to noir for thermal printing)
-      applyCanvasFilter(ctx, effectiveFilter, margin, slotY, slotWidth, slotHeight);
+      // Apply calibrated thermal tone curve (lifts shadows) or digital color filter
+      if (isThermalMode) {
+        applyThermalPhotoToneCurve(ctx, margin, slotY, slotWidth, slotHeight, thermalBrightness);
+      } else {
+        applyCanvasFilter(ctx, effectiveFilter, margin, slotY, slotWidth, slotHeight);
+      }
 
       // Inner border accent
       ctx.strokeStyle = effectiveAccentColor;
@@ -659,7 +790,11 @@ export async function renderPhotostripCanvas(options: {
       ctx.fillRect(x - 6, y - 6, slotWidth + 12, slotHeight + 12);
 
       drawImageProp(ctx, img, x, y, slotWidth, slotHeight);
-      applyCanvasFilter(ctx, effectiveFilter, x, y, slotWidth, slotHeight);
+      if (isThermalMode) {
+        applyThermalPhotoToneCurve(ctx, x, y, slotWidth, slotHeight, thermalBrightness);
+      } else {
+        applyCanvasFilter(ctx, effectiveFilter, x, y, slotWidth, slotHeight);
+      }
 
       ctx.strokeStyle = effectiveAccentColor;
       ctx.lineWidth = isThermalMode ? 1.5 : 2;
@@ -683,7 +818,11 @@ export async function renderPhotostripCanvas(options: {
 
     if (loadedImages[0]) {
       drawImageProp(ctx, loadedImages[0], margin, photoY, photoWidth, photoHeight);
-      applyCanvasFilter(ctx, effectiveFilter, margin, photoY, photoWidth, photoHeight);
+      if (isThermalMode) {
+        applyThermalPhotoToneCurve(ctx, margin, photoY, photoWidth, photoHeight, thermalBrightness);
+      } else {
+        applyCanvasFilter(ctx, effectiveFilter, margin, photoY, photoWidth, photoHeight);
+      }
     }
 
     ctx.fillStyle = effectiveTextColor;

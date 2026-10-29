@@ -20,6 +20,9 @@ import {
   ChevronRight,
   Eye,
   Smartphone,
+  Minus,
+  Plus,
+  Sun,
 } from 'lucide-react';
 import {
   FrameLayoutType,
@@ -36,6 +39,7 @@ import {
   AVAILABLE_FILTERS,
   FUN_STICKERS,
   THEME_GROUPS,
+  THERMAL_BRIGHTNESS_PRESETS,
   renderPhotostripCanvas,
 } from '../services/frameTemplates';
 import { thermalPrinterService } from '../services/thermalPrinter';
@@ -46,6 +50,10 @@ interface EditorScreenProps {
   layout: FrameLayoutType;
   initialTheme: FrameTheme;
   initialFilter: PhotoFilterType;
+  copies: number;
+  onChangeCopies: (copies: number) => void;
+  brightness?: number;
+  onChangeBrightness?: (brightness: number) => void;
   onFinalized: (result: PhotostripResult, canvas: HTMLCanvasElement) => void;
   onRetake: () => void;
 }
@@ -55,6 +63,10 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   layout,
   initialTheme,
   initialFilter,
+  copies,
+  onChangeCopies,
+  brightness = 45,
+  onChangeBrightness,
   onFinalized,
   onRetake,
 }) => {
@@ -74,6 +86,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const [previewView, setPreviewView] = useState<'thermal' | 'digital'>('thermal');
 
   const [filter, setFilter] = useState<PhotoFilterType>(initialFilter);
+  const [printBrightness, setPrintBrightness] = useState<number>(brightness ?? 45);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [stickers, setStickers] = useState<StickerItem[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
@@ -82,7 +95,6 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
   // Modals for the clean kiosk flows
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [showFinalPreviewModal, setShowFinalPreviewModal] = useState(false);
   const [showStickersDrawer, setShowStickersDrawer] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [retakesLeft, setRetakesLeft] = useState(3);
@@ -91,7 +103,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const stripContainerRef = useRef<HTMLDivElement | null>(null);
   const activeStickerDragRef = useRef<{ id: string; startX: number; startY: number; stickerX: number; stickerY: number } | null>(null);
 
-  // Update composite strip preview whenever settings change
+  const handleBrightnessUpdate = (val: number) => {
+    const clamped = Math.max(-30, Math.min(100, Math.round(val)));
+    setPrintBrightness(clamped);
+    onChangeBrightness?.(clamped);
+  };
+
+  // Update composite strip preview whenever settings or thermal brightness change
   useEffect(() => {
     let active = true;
 
@@ -111,10 +129,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           stickers: [], // Draggable DOM stickers rendered in overlay
           drawings: [],
           isThermalMode: isThermal,
+          thermalBrightness: printBrightness,
         });
 
         if (active) {
-          setPreviewSrc(canvas.toDataURL('image/jpeg', 0.88));
+          setPreviewSrc(canvas.toDataURL('image/jpeg', 0.9));
         }
       } catch {
         // ignore
@@ -126,7 +145,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     return () => {
       active = false;
     };
-  }, [photos, currentLayout, thermalTheme, digitalTheme, filter, previewView]);
+  }, [photos, currentLayout, thermalTheme, digitalTheme, filter, previewView, printBrightness]);
 
   // Add Sticker to strip
   const handleAddSticker = (emoji: string) => {
@@ -202,11 +221,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   // 1. thermalCanvas (isThermalMode: true, no color frames, pure white receipt background, black text) for physical thermal print
   // 2. colorCanvas (isThermalMode: false, full vibrant color theme and photo filter) for phone QR and email
   const handleFinalizePrint = async () => {
+    if (isRendering) return;
     soundEffects.playTap();
     setIsRendering(true);
 
     try {
-      // 1. Thermal print canvas (pure monochrome for ESC/POS printer)
+      // 1. Thermal print canvas (calibrated portrait brightness for ESC/POS & Silent Spooler)
       const thermalCanvas = await renderPhotostripCanvas({
         photos,
         layout: currentLayout,
@@ -217,10 +237,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         stickers,
         drawings: [],
         isThermalMode: true,
+        thermalBrightness: printBrightness,
       });
 
       const targetWidth = thermalTheme.borderStyle === 'wide' ? 576 : 384;
-      const dithered = thermalPrinterService.generateDitheredRaster(thermalCanvas, targetWidth);
+      const dithered = thermalPrinterService.generateDitheredRaster(thermalCanvas, targetWidth, 1.0, 0);
 
       // 2. Full color digital canvas (for phone QR and email download)
       const colorCanvas = await renderPhotostripCanvas({
@@ -251,6 +272,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         eventTitle: digitalTheme.headerText,
         shareCode: shareId.toUpperCase(),
         shareUrl,
+        printCopies: copies,
+        thermalBrightness: printBrightness,
+        stickers,
       };
 
       onFinalized(result, thermalCanvas);
@@ -597,22 +621,152 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </div>
       </div>
 
-      {/* Primary Pill Button: Print my photos */}
-      <div className="mt-auto pt-2 flex flex-col items-center max-w-sm mx-auto w-full">
+      {/* Primary Pill Button: Print Brightness + Print Copies + Print my photos */}
+      <div className="mt-auto pt-2 flex flex-col items-center max-w-md mx-auto w-full space-y-2.5">
+        {/* Print Photo Brightness / Lightness Selector */}
+        <div className="w-full p-2.5 rounded-2xl bg-white border border-zinc-200 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold flex items-center gap-1.5">
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <span>Print Brightness (Lightness)</span>
+            </span>
+            <span className="text-[11px] font-mono font-bold text-zinc-900">
+              {printBrightness > 0 ? `+${printBrightness}%` : `${printBrightness}%`}
+            </span>
+          </div>
+
+          {/* Preset Pills */}
+          <div className="grid grid-cols-5 gap-1">
+            {THERMAL_BRIGHTNESS_PRESETS.map((preset) => {
+              const isSelected = Math.abs(printBrightness - preset.value) <= 6;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playTap();
+                    setPreviewView('thermal');
+                    handleBrightnessUpdate(preset.value);
+                  }}
+                  className={`py-1.5 px-1 rounded-xl text-[10px] font-bold transition cursor-pointer truncate ${
+                    isSelected
+                      ? 'bg-black text-white shadow-2xs'
+                      : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                  }`}
+                  title={preset.description}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Fine Brightness Slider */}
+          <div className="flex items-center gap-2 px-1 pt-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                setPreviewView('thermal');
+                handleBrightnessUpdate(printBrightness - 5);
+              }}
+              className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 text-xs cursor-pointer shrink-0"
+              title="Darker (-5%)"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <input
+              type="range"
+              min={-30}
+              max={100}
+              step={5}
+              value={printBrightness}
+              onChange={(e) => {
+                setPreviewView('thermal');
+                handleBrightnessUpdate(Number(e.target.value));
+              }}
+              className="flex-1 accent-black cursor-pointer h-1.5"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.playTap();
+                setPreviewView('thermal');
+                handleBrightnessUpdate(printBrightness + 5);
+              }}
+              className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 text-xs cursor-pointer shrink-0"
+              title="Brighter (+5%)"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Print Copies Selector */}
+        <div className="flex items-center justify-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-zinc-200 shadow-2xs text-xs text-zinc-700">
+          <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-medium">
+            Print Copies
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.playTap();
+              onChangeCopies(Math.max(1, copies - 1));
+            }}
+            className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="font-bold text-sm text-zinc-950 min-w-[20px] text-center">
+            {copies}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.playTap();
+              onChangeCopies(Math.min(20, copies + 1));
+            }}
+            className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          <div className="flex items-center gap-1 pl-1 border-l border-zinc-200">
+            {[1, 2, 3, 4, 5].map((num) => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => {
+                  soundEffects.playTap();
+                  onChangeCopies(num);
+                }}
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer ${
+                  copies === num
+                    ? 'bg-black text-white'
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                }`}
+              >
+                {num}x
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
-          onClick={() => {
-            soundEffects.playTap();
-            setShowFinalPreviewModal(true);
-          }}
-          className="w-full py-4 rounded-full bg-black hover:bg-zinc-800 text-white font-medium text-sm sm:text-base tracking-wide shadow-md active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+          disabled={isRendering}
+          onClick={handleFinalizePrint}
+          className="w-full py-4 rounded-full bg-black hover:bg-zinc-800 disabled:opacity-60 text-white font-medium text-sm sm:text-base tracking-wide shadow-md active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
         >
           <Printer className="w-4 h-4 text-white" />
-          <span>Print my photos</span>
+          <span>
+            {isRendering
+              ? `Printing ${copies} ${copies === 1 ? 'copy' : 'copies'}...`
+              : `Print my photos (${copies} ${copies === 1 ? 'copy' : 'copies'})`}
+          </span>
         </button>
 
         <button
           onClick={() => setShowRetakeConfirm(true)}
-          className="mt-2 text-xs text-zinc-400 hover:text-zinc-700 transition"
+          className="text-xs text-zinc-400 hover:text-zinc-700 transition"
         >
           Start the shots over
         </button>
@@ -735,63 +889,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </div>
       )}
 
-      {/* Modal 2: Final Preview Modal */}
-      {showFinalPreviewModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-[#faf8f5] rounded-3xl p-6 max-w-sm w-full flex flex-col items-center text-center shadow-2xl border border-zinc-200">
-            <div className="w-7 h-7 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-2">
-              J
-            </div>
-
-            <h2 className="text-xl font-bold text-zinc-950 mb-1">
-              Final preview
-            </h2>
-            <p className="text-xs text-zinc-500 mb-3">
-              Printed on thermal paper without color frames
-            </p>
-
-            {/* Photostrip Preview inside modal */}
-            <div className="relative rounded-2xl overflow-hidden bg-white border border-zinc-200 shadow-md p-1 max-h-[46vh] flex items-center justify-center mb-3">
-              {previewSrc && (
-                <img
-                  src={previewSrc}
-                  alt="Final Photostrip"
-                  className="max-h-[42vh] w-auto object-contain rounded-xl"
-                />
-              )}
-            </div>
-
-            <div className="text-[11px] text-zinc-500 max-w-xs mb-4 leading-relaxed bg-white rounded-xl p-2.5 border border-zinc-200">
-              🖨️ <span className="font-semibold text-zinc-800">Printout:</span> High-contrast receipt monochrome.
-              <br />
-              📱 <span className="font-semibold text-zinc-800">Digital Save & GIF:</span> Full-color theme saved via QR & email!
-            </div>
-
-            {/* Back and Print Now Buttons */}
-            <div className="flex items-center justify-between w-full px-2">
-              <button
-                onClick={() => setShowFinalPreviewModal(false)}
-                className="text-xs text-zinc-600 hover:text-zinc-950 font-medium py-2 px-3 cursor-pointer"
-              >
-                Back
-              </button>
-
-              <button
-                disabled={isRendering}
-                onClick={async () => {
-                  setShowFinalPreviewModal(false);
-                  await handleFinalizePrint();
-                }}
-                className="px-6 py-2.5 rounded-full bg-black hover:bg-zinc-800 text-white font-medium text-sm shadow-md active:scale-95 transition cursor-pointer"
-              >
-                {isRendering ? 'Printing...' : 'Print now'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal 3: Confirm Retake */}
+      {/* Modal 2: Confirm Retake */}
       {showRetakeConfirm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center shadow-xl border border-zinc-200">

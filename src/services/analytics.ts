@@ -74,6 +74,7 @@ class AnalyticsService {
     filterId: string;
     durationSec: number;
     printed: boolean;
+    printCopies?: number;
     revenueAdded: number;
   }): Promise<void> {
     await this.init();
@@ -96,12 +97,13 @@ class AnalyticsService {
     );
 
     if (options.printed) {
-      this.currentTelemetry.totalPrints += 1;
+      const copies = Math.max(1, Math.round(Number(options.printCopies) || 1));
+      this.currentTelemetry.totalPrints += copies;
       this.currentTelemetry.lastPrintTimestamp = Date.now();
-      // Deplete paper roll (~0.8% - 1.2% per photostrip)
+      // Deplete paper roll (~1.0% per photostrip copy)
       this.currentTelemetry.paperRemainingPercent = Math.max(
         0,
-        Number((this.currentTelemetry.paperRemainingPercent - 1.0).toFixed(1))
+        Number((this.currentTelemetry.paperRemainingPercent - 1.0 * copies).toFixed(1))
       );
     }
 

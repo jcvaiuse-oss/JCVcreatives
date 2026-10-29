@@ -28,23 +28,55 @@ try {
   // Ignore in restricted environments
 }
 
-// Register Service Worker for 100% offline web and installed PWA operation
-// (Skipped automatically on file:// inside Android APK where assets are already local)
+// Suppress native browser window.print() popup modal so kiosk printing is always 100% silent
 try {
-  if (
-    typeof navigator !== 'undefined' &&
-    'serviceWorker' in navigator &&
-    (window.location.protocol === 'https:' || window.location.hostname === 'localhost') &&
-    !window.location.hostname.includes('googleusercontent.com')
-  ) {
-    window.addEventListener('load', () => {
+  if (typeof window !== 'undefined') {
+    window.print = () => {
+      // Kiosk silent print lock: prevents native browser print preview dialog from blocking the screen
+    };
+  }
+} catch {
+  // Ignore
+}
+
+// Manage Service Worker: unregister stale caches in dev/preview (.run.app) so updates apply immediately;
+// register offline SW only in standalone deployed builds
+try {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    const isPreviewHost =
+      import.meta.env.DEV ||
+      window.location.hostname.includes('run.app') ||
+      window.location.hostname.includes('googleusercontent.com');
+
+    if (isPreviewHost) {
       navigator.serviceWorker
-        .register('./sw.js')
-        .then(() => {
-          window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
+        .getRegistrations()
+        .then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister();
+          }
         })
         .catch(() => {});
-    });
+      if ('caches' in window) {
+        caches
+          .keys()
+          .then((keys) => {
+            for (const key of keys) {
+              caches.delete(key);
+            }
+          })
+          .catch(() => {});
+      }
+    } else if (window.location.protocol === 'https:' || window.location.hostname === 'localhost') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('./sw.js')
+          .then(() => {
+            window.dispatchEvent(new CustomEvent('jcv-offline-ready'));
+          })
+          .catch(() => {});
+      });
+    }
   }
 } catch {
   // Ignore SecurityError in Android WebView or sandboxed iframe

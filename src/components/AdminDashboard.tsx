@@ -744,15 +744,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setVoucherFeedbackMsg(null), 3000);
   };
 
-  // Test Print Hardware Alignment Slip
+  // Update Printer Printout Darkness (5% = Ultra Light to 100% = Extra Dark) & sync brightness/contrast/density
+  const handleUpdatePrintDarkness = async (
+    darknessVal: number,
+    densityOverride?: 'light' | 'normal' | 'dark',
+    playTapSound: boolean = true
+  ) => {
+    if (playTapSound) soundEffects.playTap();
+    const clampedDarkness = Math.max(5, Math.min(100, Math.round(darknessVal)));
+    // Inverse mapping: lower darkness = higher photo shadow lift brightness
+    // e.g. 15% darkness -> +78% brightness, 35% darkness -> +55% brightness, 50% -> +38%, 70% -> +15%, 90% -> -9%
+    const mappedBrightness = Math.max(
+      -25,
+      Math.min(92, Math.round(95 - clampedDarkness * 1.15))
+    );
+    const mappedContrast = Math.max(
+      15,
+      Math.min(95, Math.round(20 + clampedDarkness * 0.7))
+    );
+    const autoDensity: 'light' | 'normal' | 'dark' =
+      densityOverride ||
+      (clampedDarkness <= 40 ? 'light' : clampedDarkness <= 65 ? 'normal' : 'dark');
+
+    const updated: RemoteKioskConfig = {
+      ...localConfig,
+      thermalPrinter: {
+        ...localConfig.thermalPrinter,
+        printDarkness: clampedDarkness,
+        brightness: mappedBrightness,
+        contrast: mappedContrast,
+        density: autoDensity,
+      },
+    };
+    setLocalConfig(updated);
+    await remoteConfigService.updateConfig(updated);
+    onUpdateConfig(updated);
+  };
+
+  // Test Print Hardware Alignment & Darkness Calibration Slip
   const handleTestPrint = async () => {
     soundEffects.playTap();
     setIsTestPrinting(true);
     setTestPrintFeedback(null);
 
+    const activeDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
+    const activeDensity = (localConfig.thermalPrinter.density || 'light').toUpperCase();
+
     const testCanvas = document.createElement('canvas');
     testCanvas.width = localConfig.thermalPrinter.paperWidthMm === 80 ? 576 : 384;
-    testCanvas.height = 420;
+    testCanvas.height = 460;
     const ctx = testCanvas.getContext('2d')!;
 
     // White paper background
@@ -763,39 +803,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ctx.fillStyle = '#000000';
     ctx.textAlign = 'center';
     ctx.font = 'bold 20px monospace';
-    ctx.fillText('⚡ JCVCREATIVES PHOTOBOOTH ⚡', testCanvas.width / 2, 40);
-    ctx.font = '14px monospace';
-    ctx.fillText('THERMAL HARDWARE TEST', testCanvas.width / 2, 65);
-    ctx.fillText(`KIOSK: ${config.kioskId}`, testCanvas.width / 2, 85);
-    ctx.fillText(`PAPER: ${localConfig.thermalPrinter.paperWidthMm}mm / ${testCanvas.width} DOTS`, testCanvas.width / 2, 105);
+    ctx.fillText('⚡ JCVCREATIVES PHOTOBOOTH ⚡', testCanvas.width / 2, 38);
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(
+      `DARKNESS: ${activeDarkness}% (${activeDensity} BURN)`,
+      testCanvas.width / 2,
+      62
+    );
+    ctx.font = '13px monospace';
+    ctx.fillText(
+      `KIOSK: ${config.kioskId} • ${localConfig.thermalPrinter.paperWidthMm}mm (${testCanvas.width}px)`,
+      testCanvas.width / 2,
+      84
+    );
+
+    // Portrait Shadow & Skin-Tone Swatches (20%, 40%, 60%, 75%, 88% gray)
+    const swatchCount = 5;
+    const swatchMargin = 20;
+    const totalSwatchW = testCanvas.width - swatchMargin * 2;
+    const swatchW = Math.floor(totalSwatchW / swatchCount);
+    const tones = [35, 75, 120, 165, 210];
+    const toneLabels = ['SHADOW', 'DARK', 'MID', 'SKIN', 'HIGH'];
+    for (let i = 0; i < swatchCount; i++) {
+      const sx = swatchMargin + i * swatchW;
+      const g = tones[i];
+      ctx.fillStyle = `rgb(${g},${g},${g})`;
+      ctx.fillRect(sx + 2, 100, swatchW - 4, 58);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx + 2, 100, swatchW - 4, 58);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(toneLabels[i], sx + swatchW / 2, 173);
+    }
 
     // Crosshair alignment lines
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
-    ctx.strokeRect(10, 120, testCanvas.width - 20, 180);
+    ctx.strokeRect(10, 185, testCanvas.width - 20, 140);
     ctx.beginPath();
-    ctx.moveTo(testCanvas.width / 2, 120);
-    ctx.lineTo(testCanvas.width / 2, 300);
-    ctx.moveTo(10, 210);
-    ctx.lineTo(testCanvas.width - 10, 210);
+    ctx.moveTo(testCanvas.width / 2, 185);
+    ctx.lineTo(testCanvas.width / 2, 325);
+    ctx.moveTo(10, 255);
+    ctx.lineTo(testCanvas.width - 10, 255);
     ctx.stroke();
 
-    // Dither gradient bar
+    // Smooth Dither Gradient Bar
     for (let x = 20; x < testCanvas.width - 20; x++) {
       const gray = Math.floor(((x - 20) / (testCanvas.width - 40)) * 255);
       ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
-      ctx.fillRect(x, 310, 1, 30);
+      ctx.fillRect(x, 340, 1, 34);
     }
 
     ctx.fillStyle = '#000000';
     ctx.font = '12px monospace';
-    ctx.fillText('HEAD & CUTTER OK', testCanvas.width / 2, 370);
-    ctx.fillText(new Date().toLocaleString(), testCanvas.width / 2, 395);
+    ctx.fillText(
+      `DARKNESS ${activeDarkness}% • PHOTO LIFT +${localConfig.thermalPrinter.brightness ?? 45}%`,
+      testCanvas.width / 2,
+      398
+    );
+    ctx.fillText(new Date().toLocaleString(), testCanvas.width / 2, 422);
 
     const res = await thermalPrinterService.print(testCanvas, localConfig.thermalPrinter);
     setIsTestPrinting(false);
     if (res.success) {
-      setTestPrintFeedback('Test slip printed successfully!');
+      setTestPrintFeedback(
+        `Test slip printed at ${activeDarkness}% darkness (${activeDensity} burn)!`
+      );
       soundEffects.playSuccessChime();
     } else {
       setTestPrintFeedback(res.error || 'Print failed.');
@@ -961,11 +1035,170 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           })}
         </div>
 
+        {/* Pinned Printer Printout Darkness Bar (Always Visible Across All Admin Tabs) */}
+        <div className="px-6 py-2.5 bg-amber-950/40 border-b border-amber-500/40 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <Printer className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="font-bold text-white">Printer Printout Darkness:</span>
+            <span className="font-mono font-bold px-2 py-0.5 rounded bg-amber-400 text-slate-950">
+              {localConfig.thermalPrinter.printDarkness ?? 35}% ({(localConfig.thermalPrinter.density || 'light').toUpperCase()})
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { label: 'Ultra Light 15%', darkness: 15, density: 'light' as const },
+              { label: 'Light ★ 35%', darkness: 35, density: 'light' as const },
+              { label: 'Medium 50%', darkness: 50, density: 'normal' as const },
+              { label: 'Dark 70%', darkness: 70, density: 'dark' as const },
+              { label: 'Extra Dark 90%', darkness: 90, density: 'dark' as const },
+            ].map((p) => {
+              const curr = localConfig.thermalPrinter.printDarkness ?? 35;
+              const isSel = Math.abs(curr - p.darkness) <= 6;
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => handleUpdatePrintDarkness(p.darkness, p.density)}
+                  className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
+                    isSel
+                      ? 'bg-amber-400 border-amber-300 text-slate-950 shadow'
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+
+            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-slate-700">
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) - 5)
+                }
+                className="px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 font-mono text-[11px] font-bold cursor-pointer"
+              >
+                -5%
+              </button>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={5}
+                value={localConfig.thermalPrinter.printDarkness ?? 35}
+                onChange={(e) =>
+                  handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
+                }
+                className="w-20 sm:w-28 accent-amber-400 cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) + 5)
+                }
+                className="px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 font-mono text-[11px] font-bold cursor-pointer"
+              >
+                +5%
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Tab Content Body */}
         <div className="flex-1 overflow-y-auto p-6 text-white">
           {/* TAB 1: Live Telemetry */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
+              {/* Quick Printer Printout Darkness Control at Top of Admin */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-amber-950/30 border-2 border-amber-500/50 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Printer className="w-4 h-4 text-amber-400" />
+                      <h3 className="text-sm font-bold text-white">
+                        Printer Printout Darkness &amp; Burn Level
+                      </h3>
+                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950">
+                        Darkness: {localConfig.thermalPrinter.printDarkness ?? 35}% ({(localConfig.thermalPrinter.density || 'light').toUpperCase()})
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Control how dark or light your printer prints. Select <strong className="text-amber-300">Ultra Light (15%)</strong> or <strong className="text-amber-300">Light ★ (35%)</strong> for lighter, clearer faces.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isTestPrinting}
+                      onClick={handleTestPrint}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestPrinting ? 'Printing...' : 'Test Print Darkness'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { label: 'Ultra Light (15%)', darkness: 15, density: 'light' as const },
+                    { label: 'Light ★ (35%)', darkness: 35, density: 'light' as const },
+                    { label: 'Medium (50%)', darkness: 50, density: 'normal' as const },
+                    { label: 'Dark (70%)', darkness: 70, density: 'dark' as const },
+                    { label: 'Extra Dark (90%)', darkness: 90, density: 'dark' as const },
+                  ].map((preset) => {
+                    const currentDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
+                    const active = Math.abs(currentDarkness - preset.darkness) <= 6;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => handleUpdatePrintDarkness(preset.darkness, preset.density)}
+                        className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                          active
+                            ? 'bg-amber-400 border-amber-300 text-slate-950 shadow-sm'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) - 5)
+                    }
+                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                  >
+                    -5% Lighter
+                  </button>
+                  <input
+                    type="range"
+                    min={5}
+                    max={100}
+                    step={5}
+                    value={localConfig.thermalPrinter.printDarkness ?? 35}
+                    onChange={(e) =>
+                      handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
+                    }
+                    className="flex-1 accent-amber-400 cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) + 5)
+                    }
+                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                  >
+                    +5% Darker
+                  </button>
+                </div>
+              </div>
+
               {/* Top Key Metrics Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
@@ -1403,6 +1636,112 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
+              {/* Quick Printer Printout Darkness Control (Overview Shortcut) */}
+              <div className="p-5 bg-slate-900/90 border border-amber-500/30 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Printer className="w-4 h-4 text-amber-400" />
+                      <h3 className="text-sm font-bold text-white">
+                        Printer Printout Darkness Control
+                      </h3>
+                      <span className="font-mono font-bold text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                        Darkness: {localConfig.thermalPrinter.printDarkness ?? 35}% ({(localConfig.thermalPrinter.density || 'light').toUpperCase()})
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Lower the percentage for a <strong className="text-white">lighter printout</strong> (less black ink on faces &amp; hair), or raise it for a <strong className="text-white">darker printout</strong>.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isTestPrinting}
+                      onClick={handleTestPrint}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestPrinting ? 'Printing...' : 'Test Print Now'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.playTap();
+                        setActiveTab('printer');
+                      }}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition cursor-pointer"
+                    >
+                      Full Printer Settings →
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Darkness Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { label: 'Ultra Light (15%)', darkness: 15, density: 'light' as const },
+                    { label: 'Light ★ (35%)', darkness: 35, density: 'light' as const },
+                    { label: 'Medium (50%)', darkness: 50, density: 'normal' as const },
+                    { label: 'Dark (70%)', darkness: 70, density: 'dark' as const },
+                    { label: 'Extra Dark (90%)', darkness: 90, density: 'dark' as const },
+                  ].map((preset) => {
+                    const currentDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
+                    const isSelected = Math.abs(currentDarkness - preset.darkness) <= 6;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => handleUpdatePrintDarkness(preset.darkness, preset.density)}
+                        className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-sm'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Fine Darkness Slider */}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) - 5)
+                    }
+                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                  >
+                    -5% Lighter
+                  </button>
+                  <input
+                    type="range"
+                    min={5}
+                    max={100}
+                    step={5}
+                    value={localConfig.thermalPrinter.printDarkness ?? 35}
+                    onChange={(e) =>
+                      handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
+                    }
+                    className="flex-1 accent-amber-400 cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) + 5)
+                    }
+                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                  >
+                    +5% Darker
+                  </button>
+                </div>
+
+                {testPrintFeedback && (
+                  <div className="text-xs text-emerald-400 font-medium">{testPrintFeedback}</div>
+                )}
+              </div>
+
               {/* Front Screen Media (GIF, Canva Video, MP4) */}
               <div className="p-5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -1799,6 +2138,226 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 2: Universal USB & Wireless Printer Hub */}
           {activeTab === 'printer' && (
             <div className="space-y-6">
+              {/* #1 TOP CARD: Printer Printout Darkness & Thermal Head Ink Burn Control */}
+              <div className="p-5 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/30 border-2 border-amber-500/60 rounded-2xl space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Printer className="w-5 h-5 text-amber-400" />
+                      <h3 className="text-base sm:text-lg font-black text-white">
+                        Printer Printout Darkness &amp; Thermal Burn Level
+                      </h3>
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                        Master Darkness Control
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1">
+                      Directly controls how dark or light your printer prints on paper. Lowering Darkness (<strong className="text-amber-300">15% – 35%</strong>) reduces black thermal ink on faces, hair, and shadows so photos never print too dark.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono font-bold text-xs sm:text-sm px-3.5 py-1.5 rounded-xl bg-amber-500 text-slate-950 shadow">
+                      Darkness: {localConfig.thermalPrinter.printDarkness ?? 35}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* 1. One-Tap Darkness Presets */}
+                <div>
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-amber-300/90 mb-2 font-bold">
+                    1. Select Printout Darkness Level (Tap to Apply Immediately):
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {[
+                      {
+                        label: 'Ultra Light (15%)',
+                        sub: 'Brightest Faces • Minimal Ink',
+                        darkness: 15,
+                        density: 'light' as const,
+                      },
+                      {
+                        label: 'Light ★ (35%)',
+                        sub: 'Recommended • Clear Portraits',
+                        darkness: 35,
+                        density: 'light' as const,
+                      },
+                      {
+                        label: 'Medium (50%)',
+                        sub: 'Standard Balanced Ink',
+                        darkness: 50,
+                        density: 'normal' as const,
+                      },
+                      {
+                        label: 'Dark (70%)',
+                        sub: 'Deep Contrast Burn',
+                        darkness: 70,
+                        density: 'dark' as const,
+                      },
+                      {
+                        label: 'Extra Dark (90%)',
+                        sub: 'Maximum Thermal Burn',
+                        darkness: 90,
+                        density: 'dark' as const,
+                      },
+                    ].map((preset) => {
+                      const currentDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
+                      const active = Math.abs(currentDarkness - preset.darkness) <= 6;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => handleUpdatePrintDarkness(preset.darkness, preset.density)}
+                          className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                            active
+                              ? 'bg-amber-400 border-amber-300 text-slate-950 shadow-md ring-2 ring-amber-400/40'
+                              : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600 hover:text-white'
+                          }`}
+                        >
+                          <div className="font-bold text-xs">{preset.label}</div>
+                          <div
+                            className={`text-[10px] font-mono mt-1 ${
+                              active ? 'text-slate-900 font-semibold' : 'text-slate-400'
+                            }`}
+                          >
+                            {preset.sub}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Fine Printout Darkness Slider (5% to 100%) */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-mono">
+                      2. Fine Darkness Slider (5% Lightest — 100% Darkest)
+                    </span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {localConfig.thermalPrinter.printDarkness ?? 35}% Darkness • Shadow Lift:{' '}
+                      {(localConfig.thermalPrinter.brightness ?? 45) >= 0
+                        ? `+${localConfig.thermalPrinter.brightness ?? 45}%`
+                        : `${localConfig.thermalPrinter.brightness ?? 45}%`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdatePrintDarkness(
+                          (localConfig.thermalPrinter.printDarkness ?? 35) - 5
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 font-mono text-xs font-bold cursor-pointer shrink-0"
+                    >
+                      -5% Lighter
+                    </button>
+
+                    <input
+                      type="range"
+                      min={5}
+                      max={100}
+                      step={5}
+                      value={localConfig.thermalPrinter.printDarkness ?? 35}
+                      onChange={(e) =>
+                        handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
+                      }
+                      className="flex-1 accent-amber-400 cursor-pointer"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdatePrintDarkness(
+                          (localConfig.thermalPrinter.printDarkness ?? 35) + 5
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 font-mono text-xs font-bold cursor-pointer shrink-0"
+                    >
+                      +5% Darker
+                    </button>
+                  </div>
+
+                  {/* Visual Ink Density Bar */}
+                  <div className="h-2.5 w-full rounded-full bg-gradient-to-r from-zinc-100 via-zinc-500 to-zinc-950 relative overflow-hidden border border-slate-700">
+                    <div
+                      className="absolute top-0 bottom-0 w-2.5 bg-amber-400 rounded-full shadow"
+                      style={{
+                        left: `calc(${Math.max(
+                          2,
+                          Math.min(98, localConfig.thermalPrinter.printDarkness ?? 35)
+                        )}% - 5px)`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Hardware Thermal Head Burn Density Mode + Instant Test Print */}
+                <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-white">
+                      3. Hardware Thermal Head Burn Energy (ESC/POS &amp; Spooler Density)
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Use <strong>Light Burn (Cool)</strong> so sensitive thermal paper rolls don&apos;t over-darken faces.
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {(
+                      [
+                        { id: 'light', label: 'Light Burn (Cool)' },
+                        { id: 'normal', label: 'Normal Burn' },
+                        { id: 'dark', label: 'Dark Burn (Hot)' },
+                      ] as const
+                    ).map((modeItem) => {
+                      const isCurr =
+                        (localConfig.thermalPrinter.density || 'light') === modeItem.id;
+                      return (
+                        <button
+                          key={modeItem.id}
+                          type="button"
+                          onClick={async () => {
+                            soundEffects.playTap();
+                            const updated: RemoteKioskConfig = {
+                              ...localConfig,
+                              thermalPrinter: {
+                                ...localConfig.thermalPrinter,
+                                density: modeItem.id,
+                              },
+                            };
+                            setLocalConfig(updated);
+                            await remoteConfigService.updateConfig(updated);
+                            onUpdateConfig(updated);
+                          }}
+                          className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                            isCurr
+                              ? 'bg-emerald-600 border-emerald-500 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {modeItem.label}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      disabled={isTestPrinting}
+                      onClick={handleTestPrint}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestPrinting ? 'Printing...' : 'Test Print Darkness'}
+                    </button>
+                  </div>
+                </div>
+
+                {testPrintFeedback && (
+                  <div className="text-xs text-emerald-400 font-medium">{testPrintFeedback}</div>
+                )}
+              </div>
+
               <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
@@ -1833,6 +2392,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {printerStatus.error && (
                     <span className="text-rose-400 text-[11px] font-medium">{printerStatus.error}</span>
                   )}
+                </div>
+
+                {/* 1-Click Automatic Silent Print Setup (Eliminates Browser Print Pop-up Window) */}
+                <div className="p-4 rounded-xl bg-emerald-950/35 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="text-xs sm:text-sm font-bold text-white">
+                        Automatic Silent Print (No Browser Pop-up Window)
+                      </span>
+                      {thermalPrinterService.isSilentBridgeActive() && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-mono">
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Using an <strong>EPSON TM-T88V Receipt</strong> or Windows USB printer in Brave/Chrome/Edge? Download and open this 1-click setup file once on your PC so pressing <strong>Print</strong> prints immediately with <strong>zero pop-up window</strong>.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <a
+                      href="./JCV-AutoPrint-Setup.bat"
+                      download="JCV-AutoPrint-Setup.bat"
+                      onClick={() => soundEffects.playTap()}
+                      className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>1-Click Auto-Print Setup (.BAT)</span>
+                    </a>
+                  </div>
                 </div>
 
                 {/* SECTION A: WIRED USB CORD CONNECTION MODES */}
@@ -2086,6 +2676,260 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       }`}
                     >
                       {widthMm}mm Roll
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Printer Printout Darkness & Thermal Head Ink Burn Control */}
+              <div className="p-5 bg-slate-900 border border-amber-500/40 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm sm:text-base font-bold text-white">
+                        Printer Printout Darkness &amp; Thermal Burn Level
+                      </h4>
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        Master Control
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1">
+                      Directly controls how dark or light your printer prints on paper. Lowering Darkness (<strong className="text-amber-300">15% – 35%</strong>) reduces black thermal ink on faces, hair, and shadows so photos never look overly dark.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono font-bold text-xs sm:text-sm px-3.5 py-1.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      Darkness: {localConfig.thermalPrinter.printDarkness ?? 35}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* 1. One-Tap Darkness Presets */}
+                <div>
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2">
+                    1. Select Printout Darkness Level:
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {[
+                      {
+                        label: 'Ultra Light',
+                        sub: '15% Ink • Brightest Faces',
+                        darkness: 15,
+                        density: 'light' as const,
+                      },
+                      {
+                        label: 'Light ★ Recommended',
+                        sub: '35% Ink • Clear Portraits',
+                        darkness: 35,
+                        density: 'light' as const,
+                      },
+                      {
+                        label: 'Medium Standard',
+                        sub: '50% Ink • Balanced',
+                        darkness: 50,
+                        density: 'normal' as const,
+                      },
+                      {
+                        label: 'Dark',
+                        sub: '70% Ink • Deep Contrast',
+                        darkness: 70,
+                        density: 'dark' as const,
+                      },
+                      {
+                        label: 'Extra Dark',
+                        sub: '90% Ink • Max Burn',
+                        darkness: 90,
+                        density: 'dark' as const,
+                      },
+                    ].map((preset) => {
+                      const currentDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
+                      const active = Math.abs(currentDarkness - preset.darkness) <= 6;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => handleUpdatePrintDarkness(preset.darkness, preset.density)}
+                          className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                            active
+                              ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-md'
+                              : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          <div className="font-bold text-xs">{preset.label}</div>
+                          <div
+                            className={`text-[10px] font-mono mt-1 ${
+                              active ? 'text-slate-900 font-semibold' : 'text-slate-400'
+                            }`}
+                          >
+                            {preset.sub}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Fine Printout Darkness Slider (5% to 100%) */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 font-mono">
+                      Fine Darkness Adjustment (5% Lightest — 100% Darkest)
+                    </span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {localConfig.thermalPrinter.printDarkness ?? 35}% Darkness (Photo Lift:{' '}
+                      {(localConfig.thermalPrinter.brightness ?? 45) >= 0
+                        ? `+${localConfig.thermalPrinter.brightness ?? 45}%`
+                        : `${localConfig.thermalPrinter.brightness ?? 45}%`}
+                      )
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdatePrintDarkness(
+                          (localConfig.thermalPrinter.printDarkness ?? 35) - 5
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-200 font-mono text-xs font-bold cursor-pointer shrink-0"
+                    >
+                      -5% Lighter
+                    </button>
+
+                    <input
+                      type="range"
+                      min={5}
+                      max={100}
+                      step={5}
+                      value={localConfig.thermalPrinter.printDarkness ?? 35}
+                      onChange={(e) =>
+                        handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
+                      }
+                      className="flex-1 accent-amber-400 cursor-pointer"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdatePrintDarkness(
+                          (localConfig.thermalPrinter.printDarkness ?? 35) + 5
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-200 font-mono text-xs font-bold cursor-pointer shrink-0"
+                    >
+                      +5% Darker
+                    </button>
+                  </div>
+
+                  {/* Visual Ink Density Bar */}
+                  <div className="h-2 w-full rounded-full bg-gradient-to-r from-zinc-100 via-zinc-500 to-zinc-950 relative overflow-hidden border border-slate-700">
+                    <div
+                      className="absolute top-0 bottom-0 w-2 bg-amber-400 rounded-full shadow"
+                      style={{
+                        left: `calc(${Math.max(
+                          2,
+                          Math.min(98, localConfig.thermalPrinter.printDarkness ?? 35)
+                        )}% - 4px)`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Hardware Thermal Head Burn Density Mode + Instant Test Print */}
+                <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-white">
+                      Hardware Thermal Head Burn Energy (ESC/POS &amp; Spooler Density)
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Select <strong>Light Burn</strong> if your thermal paper roll is sensitive and prints faces too dark.
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {(
+                      [
+                        { id: 'light', label: 'Light Burn (Cool)' },
+                        { id: 'normal', label: 'Normal Burn' },
+                        { id: 'dark', label: 'Dark Burn (Hot)' },
+                      ] as const
+                    ).map((modeItem) => {
+                      const isCurr =
+                        (localConfig.thermalPrinter.density || 'light') === modeItem.id;
+                      return (
+                        <button
+                          key={modeItem.id}
+                          type="button"
+                          onClick={async () => {
+                            soundEffects.playTap();
+                            const updated: RemoteKioskConfig = {
+                              ...localConfig,
+                              thermalPrinter: {
+                                ...localConfig.thermalPrinter,
+                                density: modeItem.id,
+                              },
+                            };
+                            setLocalConfig(updated);
+                            await remoteConfigService.updateConfig(updated);
+                            onUpdateConfig(updated);
+                          }}
+                          className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                            isCurr
+                              ? 'bg-emerald-600 border-emerald-500 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {modeItem.label}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      disabled={isTestPrinting}
+                      onClick={handleTestPrint}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestPrinting ? 'Printing...' : 'Test Darkness Slip'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Default Print Copies per Session */}
+              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-sm font-bold text-white mb-1">Default Print Copies per Session</h4>
+                  <p className="text-xs text-slate-400">
+                    Choose the default number of copies (1, 2, 3, 4, 5+) pre-selected for each guest session. Guests can also adjust copies on screen.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  {[1, 2, 3, 4, 5, 6].map((copiesNum) => (
+                    <button
+                      key={copiesNum}
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          thermalPrinter: {
+                            ...localConfig.thermalPrinter,
+                            printCopies: copiesNum,
+                          },
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                      }}
+                      className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
+                        (localConfig.thermalPrinter.printCopies || 1) === copiesNum
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {copiesNum} {copiesNum === 1 ? 'Copy' : 'Copies'}
                     </button>
                   ))}
                 </div>
