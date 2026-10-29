@@ -25,6 +25,7 @@ interface FrameSelectorProps {
   onSelectFilter: (filter: PhotoFilterType) => void;
   copies: number;
   onSelectCopies: (copies: number) => void;
+  layoutPrices?: Record<FrameLayoutType, number>;
   onContinue: () => void;
   onBack: () => void;
 }
@@ -113,12 +114,14 @@ const MiniLiveVideo: React.FC<{
 export const FrameSelector: React.FC<FrameSelectorProps> = ({
   selectedLayout,
   onSelectLayout,
+  copies,
+  onSelectCopies,
+  layoutPrices,
   onContinue,
   onBack,
 }) => {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [facingMode] = useState<'user' | 'environment'>('user');
-  const [copies, setCopies] = useState<number>(1);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Initialize camera for live preview inside layout cards
@@ -181,8 +184,14 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
     onBack();
   };
 
+  const getPriceForLayout = (opt: LayoutItemConfig): number => {
+    const custom = layoutPrices?.[opt.id];
+    return typeof custom === 'number' && !Number.isNaN(custom) ? custom : opt.price;
+  };
+
   const currentOption = LAYOUTS.find((l) => l.id === selectedLayout) || LAYOUTS[2];
-  const totalPrice = currentOption.price * copies;
+  const currentUnitPrice = getPriceForLayout(currentOption);
+  const totalPrice = currentUnitPrice * copies;
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 max-w-xl mx-auto w-full select-none text-zinc-900 overflow-y-auto">
@@ -240,7 +249,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
               {/* Top Row: Price badge and Checkmark */}
               <div className="w-full flex items-center justify-between text-xs">
                 <span className="text-[11px] font-medium text-zinc-500">
-                  P{opt.price}
+                  P{getPriceForLayout(opt)}
                 </span>
                 {isSelected ? (
                   <div className="w-4 h-4 rounded-full bg-black text-white flex items-center justify-center">
@@ -338,43 +347,22 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
                 soundEffects.playTap();
                 onSelectCopies(Math.max(1, copies - 1));
               }}
-              className="w-7 h-7 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
+              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
             >
-              <Minus className="w-3.5 h-3.5" />
+              <Minus className="w-4 h-4" />
             </button>
-            <span className="font-bold text-base text-zinc-900 min-w-[20px] text-center">{copies}</span>
+            <span className="font-bold text-base text-zinc-900 min-w-[24px] text-center">{copies}</span>
             <button
               type="button"
               onClick={() => {
                 soundEffects.playTap();
                 onSelectCopies(Math.min(20, copies + 1));
               }}
-              className="w-7 h-7 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
+              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-4 h-4" />
             </button>
             <span className="text-zinc-400">Total P{totalPrice}</span>
-          </div>
-
-          {/* Quick Copy Count Pills (1 to 6+) */}
-          <div className="flex items-center justify-center gap-1.5">
-            {[1, 2, 3, 4, 5, 6].map((num) => (
-              <button
-                key={num}
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  onSelectCopies(num);
-                }}
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition cursor-pointer ${
-                  copies === num
-                    ? 'bg-black text-white shadow-2xs'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                }`}
-              >
-                {num}x
-              </button>
-            ))}
           </div>
         </div>
 

@@ -14,10 +14,17 @@ export const DEFAULT_CONFIG: RemoteKioskConfig = {
   eventDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
   eventHashtag: '#JCVcreatives',
   pricePerSession: 150.0,
+  layoutPrices: {
+    single_polaroid: 20,
+    grid_4: 25,
+    strip_3: 30,
+    strip_4: 40,
+  },
   currencySymbol: '₱',
   freePlayMode: false,
   passcodeAdminPin: 'jan27',
   showAdminInMenu: false,
+  autoFullscreenLock: true,
   allowedLayouts: ['strip_3', 'grid_4', 'single_polaroid', 'strip_4'],
   thermalPrinter: {
     connectionType: 'virtual',
@@ -74,6 +81,26 @@ class RemoteConfigService {
       if (this.config.showAdminInMenu === undefined) {
         this.config.showAdminInMenu = false;
         needsSave = true;
+      }
+      if (this.config.autoFullscreenLock === undefined) {
+        this.config.autoFullscreenLock = true;
+        needsSave = true;
+      }
+      if (!this.config.layoutPrices) {
+        this.config.layoutPrices = {
+          single_polaroid: 20,
+          grid_4: 25,
+          strip_3: 30,
+          strip_4: 40,
+        };
+        needsSave = true;
+      } else {
+        this.config.layoutPrices = {
+          single_polaroid: this.config.layoutPrices.single_polaroid ?? 20,
+          grid_4: this.config.layoutPrices.grid_4 ?? 25,
+          strip_3: this.config.layoutPrices.strip_3 ?? 30,
+          strip_4: this.config.layoutPrices.strip_4 ?? 40,
+        };
       }
       if (this.config.thermalPrinter && this.config.thermalPrinter.brightness === undefined) {
         this.config.thermalPrinter.brightness = 45;

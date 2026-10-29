@@ -485,57 +485,21 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           </div>
         </div>
 
-        {/* Button 4: Print more with exact Copies Selector */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-full bg-white border border-zinc-200 shadow-2xs shrink-0">
-            <button
-              type="button"
-              disabled={isPrinting}
-              onClick={() => {
-                soundEffects.playTap();
-                setReprintCopies((c) => Math.max(1, c - 1));
-              }}
-              className="w-5 h-5 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer disabled:opacity-40"
-            >
-              <Minus className="w-3 h-3" />
-            </button>
-            <span className="font-bold text-xs text-zinc-900 min-w-[22px] text-center">
-              {reprintCopies}x
-            </span>
-            <button
-              type="button"
-              disabled={isPrinting}
-              onClick={() => {
-                soundEffects.playTap();
-                setReprintCopies((c) => Math.min(20, c + 1));
-              }}
-              className="w-5 h-5 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer disabled:opacity-40"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-          </div>
-
-          <button
-            disabled={isPrinting}
-            onClick={() =>
-              executePrintJob(activeCanvas, {
-                ...config.thermalPrinter,
-                printCopies: reprintCopies,
-                brightness: reprintBrightness,
-              })
-            }
-            className="flex-1 py-2.5 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
-          >
-            <Printer className="w-4 h-4 text-zinc-600 shrink-0" />
-            <span>
-              {isPrinting
-                ? `Printing (${reprintCopies}x)...`
-                : `Print ${reprintCopies} ${reprintCopies === 1 ? 'copy' : 'copies'} • P${
-                    reprintCopies * 5
-                  }`}
-            </span>
-          </button>
-        </div>
+        {/* Button 4: Print with adjusted brightness */}
+        <button
+          disabled={isPrinting}
+          onClick={() =>
+            executePrintJob(activeCanvas, {
+              ...config.thermalPrinter,
+              printCopies: sessionCopies,
+              brightness: reprintBrightness,
+            })
+          }
+          className="w-full py-2.5 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+        >
+          <Printer className="w-4 h-4 text-zinc-600 shrink-0" />
+          <span>{isPrinting ? 'Printing...' : 'Print my photos'}</span>
+        </button>
 
         {/* Button 5: Ready? Let's snap! */}
         <button

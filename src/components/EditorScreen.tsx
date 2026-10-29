@@ -702,55 +702,6 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           </div>
         </div>
 
-        {/* Print Copies Selector */}
-        <div className="flex items-center justify-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-zinc-200 shadow-2xs text-xs text-zinc-700">
-          <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-medium">
-            Print Copies
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              soundEffects.playTap();
-              onChangeCopies(Math.max(1, copies - 1));
-            }}
-            className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
-          >
-            <Minus className="w-3 h-3" />
-          </button>
-          <span className="font-bold text-sm text-zinc-950 min-w-[20px] text-center">
-            {copies}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              soundEffects.playTap();
-              onChangeCopies(Math.min(20, copies + 1));
-            }}
-            className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
-          >
-            <Plus className="w-3 h-3" />
-          </button>
-          <div className="flex items-center gap-1 pl-1 border-l border-zinc-200">
-            {[1, 2, 3, 4, 5].map((num) => (
-              <button
-                key={num}
-                type="button"
-                onClick={() => {
-                  soundEffects.playTap();
-                  onChangeCopies(num);
-                }}
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer ${
-                  copies === num
-                    ? 'bg-black text-white'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                }`}
-              >
-                {num}x
-              </button>
-            ))}
-          </div>
-        </div>
-
         <button
           disabled={isRendering}
           onClick={handleFinalizePrint}
@@ -758,9 +709,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         >
           <Printer className="w-4 h-4 text-white" />
           <span>
-            {isRendering
-              ? `Printing ${copies} ${copies === 1 ? 'copy' : 'copies'}...`
-              : `Print my photos (${copies} ${copies === 1 ? 'copy' : 'copies'})`}
+            {isRendering ? 'Printing...' : 'Print my photos'}
           </span>
         </button>
 

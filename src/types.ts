@@ -212,10 +212,12 @@ export interface RemoteKioskConfig {
   eventDate: string;
   eventHashtag: string;
   pricePerSession: number;
+  layoutPrices?: Record<FrameLayoutType, number>;
   currencySymbol: string;
   freePlayMode: boolean;
   passcodeAdminPin: string;
   showAdminInMenu?: boolean;
+  autoFullscreenLock?: boolean;
   allowedLayouts: FrameLayoutType[];
   thermalPrinter: ThermalPrinterConfig;
   customWatermarkUrl?: string;

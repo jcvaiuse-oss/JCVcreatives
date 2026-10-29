@@ -42,9 +42,12 @@ import {
   RotateCcw,
   Copy,
   Check,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import {
   RemoteKioskConfig,
+  FrameLayoutType,
   KioskTelemetry,
   Voucher,
   PhotostripResult,
@@ -75,6 +78,7 @@ import {
   getAttractThemeById,
 } from '../services/attractThemes';
 import { DEFAULT_BOOTH_SAMPLES, sanitizeStoredAttractPhotos } from './AttractScreen';
+import { lockKioskFullscreen, unlockKioskFullscreen } from './KioskNavBar';
 
 const normalizeCanvaUrl = (raw: string): { url: string; isEmbed: boolean } => {
   const trimmed = raw.trim();
@@ -214,6 +218,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     getActiveAttractThemeId()
   );
   const adminFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Fullscreen Kiosk Lock state
+  const [isFullscreenLocked, setIsFullscreenLocked] = useState<boolean>(() => {
+    try {
+      return safeStorageGet('jcv_fullscreen_locked') === 'true' || Boolean(document.fullscreenElement);
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      try {
+        const locked = safeStorageGet('jcv_fullscreen_locked') === 'true';
+        const docAny = document as any;
+        const active = Boolean(
+          document.fullscreenElement ||
+          docAny.webkitFullscreenElement ||
+          docAny.mozFullScreenElement ||
+          docAny.msFullscreenElement
+        );
+        setIsFullscreenLocked(locked || active);
+      } catch {}
+    };
+
+    window.addEventListener('jcv_fullscreen_lock_changed', syncFullscreenState as EventListener);
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenState);
+    return () => {
+      window.removeEventListener('jcv_fullscreen_lock_changed', syncFullscreenState as EventListener);
+      document.removeEventListener('fullscreenchange', syncFullscreenState);
+      document.removeEventListener('webkitfullscreenchange', syncFullscreenState);
+    };
+  }, []);
+
+  const handleToggleFullscreenKiosk = async () => {
+    soundEffects.playTap();
+    if (isFullscreenLocked) {
+      await unlockKioskFullscreen();
+      setIsFullscreenLocked(false);
+    } else {
+      await lockKioskFullscreen(true);
+      setIsFullscreenLocked(true);
+    }
+  };
+
+  const handleToggleAutoFullscreenOnSessionStart = (enabled: boolean) => {
+    soundEffects.playTap();
+    const updatedConfig: RemoteKioskConfig = {
+      ...localConfig,
+      autoFullscreenLock: enabled,
+    };
+    setLocalConfig(updatedConfig);
+    remoteConfigService.updateConfig(updatedConfig);
+    onUpdateConfig(updatedConfig);
+    setSaveSuccessMsg(
+      enabled
+        ? 'Auto Full Screen Kiosk Lock on Session Start: ENABLED'
+        : 'Auto Full Screen Kiosk Lock on Session Start: DISABLED'
+    );
+    setTimeout(() => setSaveSuccessMsg(''), 3000);
+  };
+
+  const handleUpdateLayoutPrice = (layoutId: FrameLayoutType, rawVal: number) => {
+    const cleanPrice = Math.max(0, Number.isNaN(rawVal) ? 0 : rawVal);
+    const currentPrices: Record<FrameLayoutType, number> = {
+      single_polaroid: localConfig.layoutPrices?.single_polaroid ?? 20,
+      grid_4: localConfig.layoutPrices?.grid_4 ?? 25,
+      strip_3: localConfig.layoutPrices?.strip_3 ?? 30,
+      strip_4: localConfig.layoutPrices?.strip_4 ?? 40,
+      [layoutId]: cleanPrice,
+    };
+    const updatedConfig: RemoteKioskConfig = {
+      ...localConfig,
+      layoutPrices: currentPrices,
+    };
+    setLocalConfig(updatedConfig);
+    remoteConfigService.updateConfig(updatedConfig);
+    onUpdateConfig(updatedConfig);
+  };
 
   const handleSelectOccasionTheme = (themeId: AttractOccasionId) => {
     soundEffects.playTap();
@@ -981,6 +1065,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
+              onClick={handleToggleFullscreenKiosk}
+              title={
+                isFullscreenLocked
+                  ? 'Full Screen Kiosk Mode Locked — Click to Exit Full Screen'
+                  : 'Enter & Lock Full Screen Kiosk Display'
+              }
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+                isFullscreenLocked
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 shadow-md'
+                  : 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border-indigo-500/40'
+              }`}
+            >
+              {isFullscreenLocked ? (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  <Minimize className="w-3.5 h-3.5" />
+                  <span>Full Screen Locked (Exit)</span>
+                </>
+              ) : (
+                <>
+                  <Maximize className="w-3.5 h-3.5" />
+                  <span>Full Screen Toggle</span>
+                </>
+              )}
+            </button>
+            <button
               onClick={() => {
                 soundEffects.playTap();
                 setIsAuthenticated(false);
@@ -1196,6 +1307,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     +5% Darker
                   </button>
+                </div>
+              </div>
+
+              {/* Quick Edit Price Per Layout Card */}
+              <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/40 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="w-4 h-4 text-emerald-400" />
+                      <h3 className="text-sm font-bold text-white">
+                        Price Per Layout (&quot;Pick your layout&quot; Screen)
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Edit the price shown on each photo layout card. Changes apply immediately.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {(
+                    [
+                      { id: 'single_polaroid' as FrameLayoutType, label: 'Polaroid (1 shot)', fallback: 20 },
+                      { id: 'grid_4' as FrameLayoutType, label: 'Grid (2 shots)', fallback: 25 },
+                      { id: 'strip_3' as FrameLayoutType, label: 'Grid (3 shots)', fallback: 30 },
+                      { id: 'strip_4' as FrameLayoutType, label: '4-Cut Strip (4 shots)', fallback: 40 },
+                    ]
+                  ).map((item) => {
+                    const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1.5"
+                      >
+                        <label className="text-[11px] font-bold text-slate-300">
+                          {item.label}
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-mono text-emerald-400 font-bold">P</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={5}
+                            value={priceVal}
+                            onChange={(e) =>
+                              handleUpdateLayoutPrice(item.id, Number(e.target.value))
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold text-xs focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -2961,6 +3125,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 3: Remote Config & OTA Updates */}
           {activeTab === 'config' && (
             <div className="space-y-6">
+              {/* Full Screen Kiosk-Mode Display & Session Auto-Lock Card */}
+              <div className="p-5 bg-gradient-to-r from-slate-900 to-indigo-950/60 border-2 border-indigo-500/50 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Maximize className="w-5 h-5 text-indigo-400" />
+                      <h3 className="text-sm font-bold text-white">
+                        Full Screen Kiosk-Mode Display Lock
+                      </h3>
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                          isFullscreenLocked
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'bg-slate-800 text-slate-300 border border-slate-700'
+                        }`}
+                      >
+                        {isFullscreenLocked ? 'LOCKED IN FULL SCREEN' : 'WINDOWED MODE'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1">
+                      Uses the browser Fullscreen API, Wake Lock, and Escape-key lock to lock the tablet into a distraction-free kiosk display and auto-hide the top menu (swipe down from top edge to reveal).
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleFullscreenKiosk}
+                    className={`px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition shrink-0 cursor-pointer ${
+                      isFullscreenLocked
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400'
+                    }`}
+                  >
+                    {isFullscreenLocked ? (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        <Minimize className="w-4 h-4" />
+                        <span>Unlock &amp; Exit Full Screen</span>
+                      </>
+                    ) : (
+                      <>
+                        <Maximize className="w-4 h-4" />
+                        <span>Full Screen Toggle (Lock Kiosk)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localConfig.autoFullscreenLock !== false}
+                      onChange={(e) => handleToggleAutoFullscreenOnSessionStart(e.target.checked)}
+                      className="w-4 h-4 rounded accent-indigo-500 cursor-pointer"
+                    />
+                    <span>
+                      <strong className="text-white">Auto-Lock Full Screen Kiosk Mode on Session Start</strong> — Automatically lock the tablet into fullscreen kiosk display whenever a guest taps to start a session
+                    </span>
+                  </label>
+                </div>
+              </div>
+
               {/* Android 7+ Standalone Offline APK Download Card */}
               <div className="p-5 bg-gradient-to-r from-slate-900 to-emerald-950/40 border border-emerald-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
@@ -3057,6 +3284,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Edit Price Per Layout Section inside Remote Config */}
+                <div className="pt-3 border-t border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <DollarSign className="w-3.5 h-3.5" />
+                      <span>Price Per Layout (&quot;Pick your layout&quot; Screen)</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-400">Auto-saves as you type</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    {(
+                      [
+                        { id: 'single_polaroid' as FrameLayoutType, label: 'Polaroid (1 shot)', fallback: 20 },
+                        { id: 'grid_4' as FrameLayoutType, label: 'Grid (2 shots)', fallback: 25 },
+                        { id: 'strip_3' as FrameLayoutType, label: 'Grid (3 shots)', fallback: 30 },
+                        { id: 'strip_4' as FrameLayoutType, label: '4-Cut Strip (4 shots)', fallback: 40 },
+                      ]
+                    ).map((item) => {
+                      const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
+                      return (
+                        <div key={item.id} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                          <label className="text-slate-400 block mb-1 font-semibold text-[11px]">
+                            {item.label}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-emerald-400 font-mono font-bold">P</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={5}
+                              value={priceVal}
+                              onChange={(e) =>
+                                handleUpdateLayoutPrice(item.id, Number(e.target.value))
+                              }
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800">
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -3076,6 +3346,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="rounded accent-indigo-500"
                       />
                       <span>Show &quot;Admin&quot; Button in Top Menu Bar (Hidden by default — tap logo 4x to open)</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localConfig.autoFullscreenLock !== false}
+                        onChange={(e) =>
+                          setLocalConfig({ ...localConfig, autoFullscreenLock: e.target.checked })
+                        }
+                        className="rounded accent-indigo-500"
+                      />
+                      <span className="font-bold text-indigo-300">
+                        Automatically Lock Full Screen Kiosk Display Upon Session Start
+                      </span>
                     </label>
                   </div>
 

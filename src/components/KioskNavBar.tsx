@@ -29,6 +29,94 @@ interface KioskNavBarProps {
   onRequestAdmin: () => void;
 }
 
+export function enterBrowserFullscreenApi(): void {
+  try {
+    const doc = document as any;
+    const docEl = document.documentElement as any;
+    const isFs = !!(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+    if (!isFs) {
+      if (typeof docEl?.requestFullscreen === 'function') {
+        docEl.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+      } else if (typeof docEl?.webkitRequestFullscreen === 'function') {
+        docEl.webkitRequestFullscreen();
+      } else if (typeof docEl?.webkitRequestFullScreen === 'function') {
+        docEl.webkitRequestFullScreen();
+      } else if (typeof docEl?.mozRequestFullScreen === 'function') {
+        docEl.mozRequestFullScreen();
+      } else if (typeof docEl?.msRequestFullscreen === 'function') {
+        docEl.msRequestFullscreen();
+      }
+    }
+    const nav = navigator as any;
+    if (nav?.keyboard && typeof nav.keyboard.lock === 'function') {
+      nav.keyboard.lock(['Escape']).catch(() => {});
+    }
+    if (nav?.wakeLock && typeof nav.wakeLock.request === 'function') {
+      nav.wakeLock.request('screen').catch(() => {});
+    }
+  } catch {
+    // Ignore if blocked by iframe permissions
+  }
+}
+
+export function exitBrowserFullscreenApi(): void {
+  try {
+    const nav = navigator as any;
+    if (nav?.keyboard && typeof nav.keyboard.unlock === 'function') {
+      nav.keyboard.unlock();
+    }
+    const doc = document as any;
+    const isFs = !!(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+    if (isFs) {
+      if (typeof doc?.exitFullscreen === 'function') {
+        doc.exitFullscreen().catch(() => {});
+      } else if (typeof doc?.webkitExitFullscreen === 'function') {
+        doc.webkitExitFullscreen();
+      } else if (typeof doc?.mozCancelFullScreen === 'function') {
+        doc.mozCancelFullScreen();
+      } else if (typeof doc?.msExitFullscreen === 'function') {
+        doc.msExitFullscreen();
+      }
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+export function lockKioskFullscreen(hideMenu: boolean = true): void {
+  safeStorageSet('jcv_fullscreen_locked', 'true');
+  enterBrowserFullscreenApi();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('jcv_fullscreen_lock_changed', {
+        detail: { locked: true, hideMenu },
+      })
+    );
+  }
+}
+
+export function unlockKioskFullscreen(): void {
+  safeStorageSet('jcv_fullscreen_locked', 'false');
+  exitBrowserFullscreenApi();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('jcv_fullscreen_lock_changed', {
+        detail: { locked: false, hideMenu: false },
+      })
+    );
+  }
+}
+
 export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   currentScreen,
   onNavigateScreen,
@@ -53,69 +141,28 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const headerRef = useRef<HTMLElement | null>(null);
 
   const enterBrowserFullscreen = useCallback(() => {
-    try {
-      const doc = document as any;
-      const docEl = document.documentElement as any;
-      const isFs = !!(
-        doc.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
-      if (!isFs) {
-        if (typeof docEl?.requestFullscreen === 'function') {
-          docEl.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
-        } else if (typeof docEl?.webkitRequestFullscreen === 'function') {
-          docEl.webkitRequestFullscreen();
-        } else if (typeof docEl?.webkitRequestFullScreen === 'function') {
-          docEl.webkitRequestFullScreen();
-        } else if (typeof docEl?.mozRequestFullScreen === 'function') {
-          docEl.mozRequestFullScreen();
-        } else if (typeof docEl?.msRequestFullscreen === 'function') {
-          docEl.msRequestFullscreen();
-        }
-      }
-      // Lock Escape key in supported Chromium browsers so fullscreen stays locked
-      const nav = navigator as any;
-      if (nav?.keyboard && typeof nav.keyboard.lock === 'function') {
-        nav.keyboard.lock(['Escape']).catch(() => {});
-      }
-      // Request Screen Wake Lock so tablet doesn't sleep while locked in fullscreen
-      if (nav?.wakeLock && typeof nav.wakeLock.request === 'function') {
-        nav.wakeLock.request('screen').catch(() => {});
-      }
-    } catch {
-      // Ignore if blocked by iframe permissions
-    }
+    enterBrowserFullscreenApi();
   }, []);
 
   const exitBrowserFullscreen = useCallback(() => {
-    try {
-      const nav = navigator as any;
-      if (nav?.keyboard && typeof nav.keyboard.unlock === 'function') {
-        nav.keyboard.unlock();
+    exitBrowserFullscreenApi();
+  }, []);
+
+  // Listen for external fullscreen lock changes (from Admin Dashboard toggle or Session Start auto-lock)
+  useEffect(() => {
+    const handleExternalLockChange = (e: Event) => {
+      const customEvt = e as CustomEvent<{ locked: boolean; hideMenu?: boolean }>;
+      if (customEvt.detail) {
+        setIsMaximizedLocked(Boolean(customEvt.detail.locked));
+        setIsTopMenuHidden(
+          customEvt.detail.hideMenu !== undefined
+            ? Boolean(customEvt.detail.hideMenu)
+            : Boolean(customEvt.detail.locked)
+        );
       }
-      const doc = document as any;
-      const isFs = !!(
-        doc.fullscreenElement ||
-        doc.webkitFullscreenElement ||
-        doc.mozFullScreenElement ||
-        doc.msFullscreenElement
-      );
-      if (isFs) {
-        if (typeof doc?.exitFullscreen === 'function') {
-          doc.exitFullscreen().catch(() => {});
-        } else if (typeof doc?.webkitExitFullscreen === 'function') {
-          doc.webkitExitFullscreen();
-        } else if (typeof doc?.mozCancelFullScreen === 'function') {
-          doc.mozCancelFullScreen();
-        } else if (typeof doc?.msExitFullscreen === 'function') {
-          doc.msExitFullscreen();
-        }
-      }
-    } catch {
-      // Ignore
-    }
+    };
+    window.addEventListener('jcv_fullscreen_lock_changed', handleExternalLockChange);
+    return () => window.removeEventListener('jcv_fullscreen_lock_changed', handleExternalLockChange);
   }, []);
 
   useEffect(() => {

@@ -21,7 +21,7 @@ import { storageService } from './services/storage';
 import { soundEffects } from './services/soundEffects';
 
 // Components
-import { KioskNavBar } from './components/KioskNavBar';
+import { KioskNavBar, lockKioskFullscreen } from './components/KioskNavBar';
 import { AttractScreen } from './components/AttractScreen';
 import { PaymentModal } from './components/PaymentModal';
 import { FrameSelector } from './components/FrameSelector';
@@ -96,13 +96,23 @@ export default function App() {
     setSelectedBrightness(config.thermalPrinter?.brightness ?? 45);
     soundEffects.playTap();
 
+    // Automatically lock tablet into Fullscreen Kiosk-Mode display upon session start if enabled
+    if (config.autoFullscreenLock !== false) {
+      lockKioskFullscreen(true);
+    }
+
     // If free play mode active, skip payment gate straight to frame customization
     if (config.freePlayMode) {
       setCurrentScreen('frame_select');
     } else {
       setCurrentScreen('payment');
     }
-  }, [config.freePlayMode, config.thermalPrinter?.printCopies, config.thermalPrinter?.brightness]);
+  }, [
+    config.freePlayMode,
+    config.autoFullscreenLock,
+    config.thermalPrinter?.printCopies,
+    config.thermalPrinter?.brightness,
+  ]);
 
   // Handler: Payment Succeeded
   const handlePaymentSuccess = (tx: PaymentTransaction) => {
@@ -204,6 +214,7 @@ export default function App() {
             onSelectFilter={setSelectedFilter}
             copies={selectedCopies}
             onSelectCopies={setSelectedCopies}
+            layoutPrices={config.layoutPrices}
             onContinue={() => setCurrentScreen('capture')}
             onBack={handleResetToAttract}
           />
