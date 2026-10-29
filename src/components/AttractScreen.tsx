@@ -449,29 +449,6 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
         opacityClass={theme.floatingOpacityClass}
       />
 
-      {/* Top Header & Event Title */}
-      <div className="w-full flex justify-between items-start z-10 max-w-2xl">
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            handleLogoTap();
-          }}
-          className={`cursor-pointer group flex items-center gap-3 p-2 rounded-2xl border shadow-xs transition ${theme.brandCardClass}`}
-        >
-          <div
-            className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold shadow-md border ${theme.brandIconBgClass}`}
-          >
-            <Camera className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider opacity-70 font-mono">
-              {theme.brandSubtitleText}
-            </div>
-            <h2 className="text-sm sm:text-base font-bold tracking-tight">JCVcreatives Photobooth</h2>
-          </div>
-        </div>
-      </div>
-
       {/* Hero Visual Area: Occasion Envelope with Fan-out Photostrips */}
       <div className="my-auto z-10 flex flex-col items-center text-center max-w-md w-full py-4">
         {/* Title branding lockup */}
@@ -495,7 +472,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
           {/* Strip 1: Left 2-cut Photostrip (IMG_3042 + IMG_3043 together in one strip) */}
           <div
             style={getCardTransformStyle('left')}
-            className={`absolute left-1/2 top-2 w-24 h-50 flex flex-col p-1.5 strip-card-gpu select-none ${theme.stripCardClass}`}
+            className={`absolute left-1/2 top-2 w-26 h-52 flex flex-col p-2 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
             {theme.leftCornerStickerImage ? (
               <img
@@ -515,13 +492,13 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               </span>
             ) : null}
             <div
-              className={`text-[7px] text-center uppercase tracking-widest pb-1 truncate ${theme.stripHeaderClass}`}
+              className={`shrink-0 text-[7.5px] leading-snug text-center uppercase tracking-wider pb-1 mb-1 whitespace-nowrap overflow-hidden text-ellipsis ${theme.stripHeaderClass}`}
             >
               {theme.leftStripHeader}
             </div>
-            <div className="flex-1 flex flex-col justify-around py-1 gap-1.5">
+            <div className="flex-1 min-h-0 flex flex-col justify-between gap-1.5 overflow-hidden">
               <div
-                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+                className={`flex-1 min-h-0 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
               >
                 {getPhoto(0) ? (
                   <img
@@ -535,7 +512,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                 )}
               </div>
               <div
-                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+                className={`flex-1 min-h-0 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
               >
                 {getPhoto(1) ? (
                   <img
@@ -549,7 +526,9 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                 )}
               </div>
             </div>
-            <div className={`text-[6px] text-center pt-1 truncate ${theme.stripFooterClass}`}>
+            <div
+              className={`shrink-0 text-[6.5px] leading-snug text-center pt-1 mt-1 whitespace-nowrap overflow-hidden text-ellipsis ${theme.stripFooterClass}`}
+            >
               {theme.leftStripFooter}
             </div>
           </div>
@@ -557,7 +536,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
           {/* Strip 2: Center Front Polaroid Frame (IMG_3044) */}
           <div
             style={getCardTransformStyle('center')}
-            className={`absolute left-1/2 top-2 w-28 h-42 flex flex-col p-2 strip-card-gpu select-none ${theme.polaroidCardClass}`}
+            className={`absolute left-1/2 top-2 w-30 h-44 flex flex-col p-2 strip-card-gpu select-none ${theme.polaroidCardClass}`}
           >
             {theme.centerCornerBadgeImage ? (
               <img
@@ -584,11 +563,13 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                 </span>
               </div>
             ) : null}
-            <div className={`text-[7px] text-center mb-1 truncate ${theme.stripHeaderClass}`}>
+            <div
+              className={`shrink-0 text-[7.5px] leading-snug text-center uppercase tracking-wider pb-1 mb-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${theme.stripHeaderClass}`}
+            >
               {theme.centerPolaroidHeader}
             </div>
             <div
-              className={`w-full h-26 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+              className={`flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
             >
               {getPhoto(2) ? (
                 <img
@@ -602,7 +583,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               )}
             </div>
             <div
-              className={`mt-auto text-center text-[10px] truncate ${theme.centerPolaroidCaptionClass}`}
+              className={`shrink-0 pt-1.5 text-center text-[9.5px] leading-snug whitespace-nowrap overflow-hidden text-ellipsis ${theme.centerPolaroidCaptionClass}`}
             >
               {theme.centerPolaroidCaption}
             </div>
@@ -611,7 +592,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
           {/* Strip 3: Right Receipt 2-cut Photostrip (IMG_3045 + IMG_3046 together in one strip) */}
           <div
             style={getCardTransformStyle('right')}
-            className={`absolute left-1/2 top-2 w-24 h-50 flex flex-col p-1.5 strip-card-gpu select-none ${theme.stripCardClass}`}
+            className={`absolute left-1/2 top-2 w-26 h-52 flex flex-col p-2 strip-card-gpu select-none ${theme.stripCardClass}`}
           >
             {theme.rightCornerStickerImage ? (
               <img
@@ -631,13 +612,13 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               </span>
             ) : null}
             <div
-              className={`text-[7px] text-center uppercase tracking-widest pb-1 truncate ${theme.stripHeaderClass}`}
+              className={`shrink-0 text-[7.5px] leading-snug text-center uppercase tracking-wider pb-1 mb-1 whitespace-nowrap overflow-hidden text-ellipsis ${theme.stripHeaderClass}`}
             >
               {theme.rightStripHeader}
             </div>
-            <div className="flex-1 flex flex-col justify-around py-1 gap-1.5">
+            <div className="flex-1 min-h-0 flex flex-col justify-between gap-1.5 overflow-hidden">
               <div
-                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+                className={`flex-1 min-h-0 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
               >
                 {getPhoto(3) ? (
                   <img
@@ -651,7 +632,7 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                 )}
               </div>
               <div
-                className={`flex-1 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
+                className={`flex-1 min-h-0 overflow-hidden flex items-center justify-center relative ${theme.photoSlotClass}`}
               >
                 {getPhoto(4) ? (
                   <img
@@ -665,7 +646,9 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
                 )}
               </div>
             </div>
-            <div className={`text-[6px] text-center pt-1 truncate ${theme.stripFooterClass}`}>
+            <div
+              className={`shrink-0 text-[6.5px] leading-snug text-center pt-1 mt-1 whitespace-nowrap overflow-hidden text-ellipsis ${theme.stripFooterClass}`}
+            >
               {theme.rightStripFooter}
             </div>
           </div>

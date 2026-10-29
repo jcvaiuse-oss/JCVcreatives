@@ -193,59 +193,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             JCVcreatives <span className="text-zinc-500 font-normal">Photobooth</span>
           </span>
         </button>
-
-        <div className="hidden md:flex items-center gap-2 pl-3 border-l border-zinc-200 text-zinc-500">
-          <span className="font-mono text-[11px] text-zinc-500">
-            {config.kioskId}
-          </span>
-          <span className="text-[11px] text-zinc-300">•</span>
-          <span className="text-[11px] text-zinc-500 truncate max-w-[180px]">{config.locationName}</span>
-        </div>
-      </div>
-
-      {/* Center: Live Status Indicators (Monochrome & Understated) */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Thermal Paper Roll % */}
-        <div
-          title={`Paper Roll: ${telemetry.paperRemainingPercent}% remaining`}
-          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] ${
-            paperLow
-              ? 'border-amber-300 bg-amber-50 text-amber-800'
-              : 'border-zinc-200 bg-zinc-50 text-zinc-600'
-          }`}
-        >
-          <Scroll className="w-3.5 h-3.5 text-zinc-500" />
-          <span>Paper {telemetry.paperRemainingPercent}%</span>
-        </div>
-
-        {/* Online / Offline Ready badge */}
-        <div
-          title={isOnline ? 'Online & Cached for Offline Use' : 'Offline Mode Active — Working Locally'}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-200 bg-zinc-50 text-zinc-600 text-[11px]"
-        >
-          {isOnline ? (
-            <>
-              <Wifi className="w-3.5 h-3.5 text-zinc-700" />
-              <span className="hidden md:inline">Online</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Offline Ready</span>
-            </>
-          )}
-        </div>
-
-        {/* Battery if available */}
-        {telemetry.deviceBatteryLevel !== undefined && (
-          <div className="hidden lg:flex items-center gap-1 text-zinc-500 text-[11px]">
-            <Battery className="w-3.5 h-3.5 text-zinc-600" />
-            <span>{telemetry.deviceBatteryLevel}%</span>
-          </div>
-        )}
-
-        {/* Clock */}
-        <span className="hidden sm:inline font-mono text-[11px] text-zinc-500">{timeStr}</span>
       </div>
 
       {/* Right Controls: Install App + Fullscreen + Optional Admin */}
