@@ -621,87 +621,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </div>
       </div>
 
-      {/* Primary Pill Button: Print Brightness + Print Copies + Print my photos */}
+      {/* Primary Pill Button: Print my photos */}
       <div className="mt-auto pt-2 flex flex-col items-center max-w-md mx-auto w-full space-y-2.5">
-        {/* Print Photo Brightness / Lightness Selector */}
-        <div className="w-full p-2.5 rounded-2xl bg-white border border-zinc-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-semibold flex items-center gap-1.5">
-              <Sun className="w-3.5 h-3.5 text-amber-500" />
-              <span>Print Brightness (Lightness)</span>
-            </span>
-            <span className="text-[11px] font-mono font-bold text-zinc-900">
-              {printBrightness > 0 ? `+${printBrightness}%` : `${printBrightness}%`}
-            </span>
-          </div>
-
-          {/* Preset Pills */}
-          <div className="grid grid-cols-5 gap-1">
-            {THERMAL_BRIGHTNESS_PRESETS.map((preset) => {
-              const isSelected = Math.abs(printBrightness - preset.value) <= 6;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => {
-                    soundEffects.playTap();
-                    setPreviewView('thermal');
-                    handleBrightnessUpdate(preset.value);
-                  }}
-                  className={`py-1.5 px-1 rounded-xl text-[10px] font-bold transition cursor-pointer truncate ${
-                    isSelected
-                      ? 'bg-black text-white shadow-2xs'
-                      : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
-                  }`}
-                  title={preset.description}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Fine Brightness Slider */}
-          <div className="flex items-center gap-2 px-1 pt-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.playTap();
-                setPreviewView('thermal');
-                handleBrightnessUpdate(printBrightness - 5);
-              }}
-              className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 text-xs cursor-pointer shrink-0"
-              title="Darker (-5%)"
-            >
-              <Minus className="w-3 h-3" />
-            </button>
-            <input
-              type="range"
-              min={-30}
-              max={100}
-              step={5}
-              value={printBrightness}
-              onChange={(e) => {
-                setPreviewView('thermal');
-                handleBrightnessUpdate(Number(e.target.value));
-              }}
-              className="flex-1 accent-black cursor-pointer h-1.5"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.playTap();
-                setPreviewView('thermal');
-                handleBrightnessUpdate(printBrightness + 5);
-              }}
-              className="w-6 h-6 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 text-xs cursor-pointer shrink-0"
-              title="Brighter (+5%)"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-
         <button
           disabled={isRendering}
           onClick={handleFinalizePrint}

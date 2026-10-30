@@ -16,22 +16,42 @@ interface PaymentModalProps {
   config: RemoteKioskConfig;
   onPaymentSuccess: (transaction: PaymentTransaction) => void;
   onCancel: () => void;
+  onSecretAdminTap?: () => void;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
   config,
   onPaymentSuccess,
   onCancel,
+  onSecretAdminTap,
 }) => {
   const [voucherCode, setVoucherCode] = useState<string>('');
   const [voucherError, setVoucherError] = useState<string>('');
   const [voucherSuccess, setVoucherSuccess] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentReceived, setPaymentReceived] = useState(false);
+  const [logoTapCount, setLogoTapCount] = useState(0);
 
   useEffect(() => {
     paymentService.initVouchers();
   }, []);
+
+  useEffect(() => {
+    if (logoTapCount === 0) return;
+    const t = setTimeout(() => setLogoTapCount(0), 2500);
+    return () => clearTimeout(t);
+  }, [logoTapCount]);
+
+  const handleLogoSecretTap = () => {
+    soundEffects.playTap();
+    const next = logoTapCount + 1;
+    if (next >= 4) {
+      setLogoTapCount(0);
+      onSecretAdminTap?.();
+      return;
+    }
+    setLogoTapCount(next);
+  };
 
   const handleRedeemVoucher = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -64,9 +84,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       {paymentReceived ? (
         <div className="flex flex-col items-center justify-center text-center animate-fadeIn py-12">
           {/* Brand square logo */}
-          <div className="w-8 h-8 rounded bg-black text-white flex items-center justify-center font-bold text-sm mb-6 shadow-xs">
+          <button
+            type="button"
+            data-no-fullscreen-enforce="true"
+            onClick={handleLogoSecretTap}
+            className="w-8 h-8 rounded bg-black text-white flex items-center justify-center font-bold text-sm mb-6 shadow-xs cursor-pointer"
+          >
             J
-          </div>
+          </button>
 
           {/* Green checkmark circle */}
           <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 mb-4 animate-bounce">
@@ -83,10 +108,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       ) : (
         /* Voucher-Only Payment Screen */
         <div className="w-full max-w-sm flex flex-col items-center text-center">
-          {/* Brand square logo */}
-          <div className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center font-bold text-base mb-4 shadow-sm">
+          {/* Brand square logo (4 rapid taps unlocks to minimize & opens Admin) */}
+          <button
+            type="button"
+            data-no-fullscreen-enforce="true"
+            onClick={handleLogoSecretTap}
+            className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center font-bold text-base mb-4 shadow-sm cursor-pointer"
+          >
             J
-          </div>
+          </button>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-[10px] uppercase font-mono tracking-widest text-zinc-600 mb-3">
             <Ticket className="w-3.5 h-3.5 text-zinc-700" />

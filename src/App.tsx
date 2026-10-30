@@ -21,7 +21,7 @@ import { storageService } from './services/storage';
 import { soundEffects } from './services/soundEffects';
 
 // Components
-import { KioskNavBar, lockKioskFullscreen } from './components/KioskNavBar';
+import { KioskNavBar, lockKioskFullscreen, unlockKioskFullscreen } from './components/KioskNavBar';
 import { AttractScreen } from './components/AttractScreen';
 import { PaymentModal } from './components/PaymentModal';
 import { FrameSelector } from './components/FrameSelector';
@@ -181,7 +181,10 @@ export default function App() {
         onNavigateScreen={setCurrentScreen}
         telemetry={telemetry}
         config={config}
-        onRequestAdmin={() => setShowAdminModal(true)}
+        onRequestAdmin={() => {
+          unlockKioskFullscreen();
+          setShowAdminModal(true);
+        }}
       />
 
       {/* Screen Router */}
@@ -191,7 +194,10 @@ export default function App() {
           <AttractScreen
             config={config}
             onStartSession={handleStartSession}
-            onSecretAdminTap={() => setShowAdminModal(true)}
+            onSecretAdminTap={() => {
+              unlockKioskFullscreen();
+              setShowAdminModal(true);
+            }}
           />
         )}
 
@@ -201,6 +207,10 @@ export default function App() {
             config={config}
             onPaymentSuccess={handlePaymentSuccess}
             onCancel={handleResetToAttract}
+            onSecretAdminTap={() => {
+              unlockKioskFullscreen();
+              setShowAdminModal(true);
+            }}
           />
         )}
 

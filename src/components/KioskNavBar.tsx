@@ -119,7 +119,6 @@ export function unlockKioskFullscreen(): void {
 
 export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   currentScreen,
-  onNavigateScreen,
   config,
   onRequestAdmin,
 }) => {
@@ -144,10 +143,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     enterBrowserFullscreenApi();
   }, []);
 
-  const exitBrowserFullscreen = useCallback(() => {
-    exitBrowserFullscreenApi();
-  }, []);
-
   // Listen for external fullscreen lock changes (from Admin Dashboard toggle or Session Start auto-lock)
   useEffect(() => {
     const handleExternalLockChange = (e: Event) => {
@@ -165,6 +160,13 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     return () => window.removeEventListener('jcv_fullscreen_lock_changed', handleExternalLockChange);
   }, []);
 
+  // Keep top menu hidden when navigating to another screen/tab while Maximized Lock is active
+  useEffect(() => {
+    if (isMaximizedLocked) {
+      setIsTopMenuHidden(true);
+    }
+  }, [currentScreen, isMaximizedLocked]);
+
   useEffect(() => {
     if (secretTapCount === 0) return;
     const timer = setTimeout(() => setSecretTapCount(0), 2500);
@@ -176,6 +178,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         soundEffects.playTap();
+        unlockKioskFullscreen();
         onRequestAdmin();
       }
     };
@@ -183,11 +186,18 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onRequestAdmin]);
 
-  // Keep Fullscreen Locked on any touch/click if browser dropped native fullscreen while lock is active
+  // Keep Fullscreen Locked on any click/tap if browser dropped native fullscreen (e.g. after switching tabs)
   useEffect(() => {
     if (!isMaximizedLocked) return;
 
-    const handleEnforceFullscreenLock = () => {
+    const handleEnforceFullscreenLock = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('[data-no-fullscreen-enforce="true"]')) {
+        return;
+      }
+      if (safeStorageGet('jcv_fullscreen_locked') !== 'true') {
+        return;
+      }
       const doc = document as any;
       const isFs = !!(
         doc.fullscreenElement ||
@@ -200,9 +210,22 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       }
     };
 
-    window.addEventListener('pointerdown', handleEnforceFullscreenLock, { passive: true });
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' && safeStorageGet('jcv_fullscreen_locked') === 'true') {
+        enterBrowserFullscreen();
+      }
+    };
+
+    window.addEventListener('click', handleEnforceFullscreenLock, { capture: true });
+    window.addEventListener('touchend', handleEnforceFullscreenLock, { capture: true, passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
     return () => {
-      window.removeEventListener('pointerdown', handleEnforceFullscreenLock);
+      window.removeEventListener('click', handleEnforceFullscreenLock, { capture: true });
+      window.removeEventListener('touchend', handleEnforceFullscreenLock, { capture: true });
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, [isMaximizedLocked, enterBrowserFullscreen]);
 
@@ -210,8 +233,8 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   useEffect(() => {
     if (!isMaximizedLocked) return;
 
-    const SWIPE_TOP_ZONE_PX = 95; // Starting within top 95px of screen
-    const SWIPE_THRESHOLD_PX = 24; // Minimum downward movement to trigger reveal
+    const SWIPE_TOP_ZONE_PX = 36; // Must start within top 36px edge of screen
+    const SWIPE_THRESHOLD_PX = 36; // Deliberate downward swipe to reveal top bar
 
     const handleTouchStart = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return;
@@ -234,7 +257,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       const deltaX = Math.abs(currentX - (swipeStartXRef.current ?? currentX));
 
       // Downward swipe from top edge -> Reveal top menu
-      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX) {
+      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.5) {
         swipeStartYRef.current = null;
         setIsTopMenuHidden(false);
         soundEffects.playTap();
@@ -258,12 +281,12 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         swipeStartXRef.current = e.clientX;
       } else {
         swipeStartYRef.current = null;
-        // If menu is revealed while locked and user taps outside the top bar in the lower screen, auto-hide the bar
+        // If menu is revealed while locked and user taps outside the top bar, auto-hide the bar
         if (
           !isTopMenuHidden &&
           headerRef.current &&
           !headerRef.current.contains(e.target as Node) &&
-          e.clientY > 110
+          e.clientY > 48
         ) {
           setIsTopMenuHidden(true);
         }
@@ -277,7 +300,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       const deltaY = e.clientY - swipeStartYRef.current;
       const deltaX = Math.abs(e.clientX - (swipeStartXRef.current ?? e.clientX));
 
-      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX) {
+      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.5) {
         swipeStartYRef.current = null;
         setIsTopMenuHidden(false);
         soundEffects.playTap();
@@ -368,49 +391,65 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
   const toggleFullscreenLock = () => {
     soundEffects.playTap();
     if (!isMaximizedLocked) {
-      // Lock into Maximized Fullscreen & hide the top menu
-      setIsMaximizedLocked(true);
-      setIsTopMenuHidden(true);
-      safeStorageSet('jcv_fullscreen_locked', 'true');
-      enterBrowserFullscreen();
+      lockKioskFullscreen(true);
     } else {
-      // Unlock Fullscreen & restore top menu permanently
-      setIsMaximizedLocked(false);
-      setIsTopMenuHidden(false);
-      safeStorageSet('jcv_fullscreen_locked', 'false');
-      exitBrowserFullscreen();
+      unlockKioskFullscreen();
     }
+  };
+
+  // 4-tap secret gesture on the logo: unlocks maximize lock to minimize and opens Admin PIN modal
+  const handleLogoSecretTap = () => {
+    soundEffects.playTap();
+    const next = secretTapCount + 1;
+    if (next >= 4) {
+      setSecretTapCount(0);
+      unlockKioskFullscreen();
+      onRequestAdmin();
+      return;
+    }
+    setSecretTapCount(next);
   };
 
   return (
     <>
-      {/* Top-Edge Swipe-Down Sensor Strip when Maximized & Top Menu is Hidden */}
+      {/* Top-Edge Swipe-Down Sensor Strip & Hidden Top-Left Logo Tap Zone when Maximized & Top Menu is Hidden */}
       {isMaximizedLocked && isTopMenuHidden && (
-        <div
-          onTouchStart={(e) => {
-            if (e.touches && e.touches[0]) {
-              swipeStartYRef.current = e.touches[0].clientY;
-              swipeStartXRef.current = e.touches[0].clientX;
-            }
-          }}
-          onTouchMove={(e) => {
-            if (
-              swipeStartYRef.current !== null &&
-              e.touches &&
-              e.touches[0] &&
-              e.touches[0].clientY - swipeStartYRef.current >= 16
-            ) {
-              swipeStartYRef.current = null;
-              setIsTopMenuHidden(false);
-              soundEffects.playTap();
-            }
-          }}
-          className="fixed top-0 inset-x-0 h-5 z-50 flex justify-center items-start pointer-events-auto touch-none"
-          title="Swipe down from top to show menu"
-        >
-          {/* Subtle pill indicator at top center so operator knows where to swipe down */}
-          <div className="w-12 h-1 mt-1 rounded-full bg-black/15" />
-        </div>
+        <>
+          {/* Invisible Top-Left Logo Tap Zone so spamming top-left corner 4x works even while top menu is hidden */}
+          <button
+            type="button"
+            data-no-fullscreen-enforce="true"
+            onClick={handleLogoSecretTap}
+            className="fixed top-0 left-0 w-44 h-11 z-50 bg-transparent border-0 cursor-pointer focus:outline-none"
+            title="Tap 4 times for Admin"
+            aria-label="Admin Secret Tap Area"
+          />
+          <div
+            onTouchStart={(e) => {
+              if (e.touches && e.touches[0]) {
+                swipeStartYRef.current = e.touches[0].clientY;
+                swipeStartXRef.current = e.touches[0].clientX;
+              }
+            }}
+            onTouchMove={(e) => {
+              if (
+                swipeStartYRef.current !== null &&
+                e.touches &&
+                e.touches[0] &&
+                e.touches[0].clientY - swipeStartYRef.current >= 24
+              ) {
+                swipeStartYRef.current = null;
+                setIsTopMenuHidden(false);
+                soundEffects.playTap();
+              }
+            }}
+            className="fixed top-0 inset-x-0 h-5 z-40 flex justify-center items-start pointer-events-auto touch-none"
+            title="Swipe down from top to show menu"
+          >
+            {/* Subtle pill indicator at top center so operator knows where to swipe down */}
+            <div className="w-12 h-1 mt-1 rounded-full bg-black/15" />
+          </div>
+        </>
       )}
 
       {/* Top Menu Header: Normal in-flow when unlocked; slides down as overlay when swiped down in Maximized Lock mode */}
@@ -424,22 +463,12 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
             : 'relative translate-y-0 opacity-100'
         }`}
       >
-        {/* Left: Kiosk Branding (4 rapid taps opens hidden Admin PIN prompt) */}
+        {/* Left: Kiosk Branding (4 rapid taps unlocks to minimize & opens hidden Admin PIN prompt) */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              soundEffects.playTap();
-              const next = secretTapCount + 1;
-              if (next >= 4) {
-                setSecretTapCount(0);
-                onRequestAdmin();
-                return;
-              }
-              setSecretTapCount(next);
-              if (currentScreen !== 'attract') {
-                onNavigateScreen('attract');
-              }
-            }}
+            type="button"
+            data-no-fullscreen-enforce="true"
+            onClick={handleLogoSecretTap}
             className="flex items-center gap-2.5 text-zinc-900 hover:opacity-80 transition tracking-wider cursor-pointer"
           >
             <div className="w-6 h-6 rounded-md bg-black text-white flex items-center justify-center font-mono font-bold text-xs shadow-xs">
@@ -467,6 +496,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
           {/* When Maximized Lock is active and user swiped down to show menu, allow hiding menu again with 1 tap */}
           {isMaximizedLocked && !isTopMenuHidden && (
             <button
+              type="button"
               onClick={() => {
                 soundEffects.playTap();
                 setIsTopMenuHidden(true);
@@ -480,10 +510,12 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
           )}
 
           <button
+            type="button"
+            data-no-fullscreen-enforce="true"
             onClick={toggleFullscreenLock}
             title={
               isMaximizedLocked
-                ? 'Fullscreen Locked (Tap to Unlock & Show Top Bar)'
+                ? 'Fullscreen Locked (Tap to Unlock & Minimize)'
                 : 'Lock Fullscreen & Hide Top Menu (Swipe down from top to reveal)'
             }
             className={`flex items-center gap-1.5 p-1.5 rounded-lg border transition cursor-pointer ${
@@ -504,12 +536,15 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
 
           {config.showAdminInMenu && (
             <button
+              type="button"
+              data-no-fullscreen-enforce="true"
               onClick={() => {
                 soundEffects.playTap();
+                unlockKioskFullscreen();
                 onRequestAdmin();
               }}
               title="Admin Settings & Kiosk Diagnostics"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
                 currentScreen === 'admin'
                   ? 'bg-black text-white border-black font-medium'
                   : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'

@@ -223,7 +223,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Fullscreen Kiosk Lock state
   const [isFullscreenLocked, setIsFullscreenLocked] = useState<boolean>(() => {
     try {
-      return safeStorageGet('jcv_fullscreen_locked') === 'true' || Boolean(document.fullscreenElement);
+      return safeStorageGet('jcv_fullscreen_locked') === 'true';
     } catch {
       return false;
     }
@@ -233,14 +233,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const syncFullscreenState = () => {
       try {
         const locked = safeStorageGet('jcv_fullscreen_locked') === 'true';
-        const docAny = document as any;
-        const active = Boolean(
-          document.fullscreenElement ||
-          docAny.webkitFullscreenElement ||
-          docAny.mozFullScreenElement ||
-          docAny.msFullscreenElement
-        );
-        setIsFullscreenLocked(locked || active);
+        setIsFullscreenLocked(locked);
       } catch {}
     };
 
@@ -1076,6 +1069,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              data-no-fullscreen-enforce="true"
               onClick={handleToggleFullscreenKiosk}
               title={
                 isFullscreenLocked
@@ -1131,7 +1125,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'frontscreen', label: 'Front Screen & Media', icon: Sparkles },
             { id: 'printer', label: 'Thermal Driver', icon: Printer },
             { id: 'config', label: 'Remote Config & OTA', icon: Cloud },
-            { id: 'vouchers', label: 'Vouchers & Passes', icon: Ticket },
+            { id: 'vouchers', label: 'Price & Vouchers', icon: Ticket },
             { id: 'gallery', label: 'Capture Archive & Queue', icon: History },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1156,223 +1150,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           })}
         </div>
 
-        {/* Pinned Printer Printout Darkness Bar (Always Visible Across All Admin Tabs) */}
-        <div className="px-6 py-2.5 bg-amber-950/40 border-b border-amber-500/40 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <Printer className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="font-bold text-white">Printer Printout Darkness:</span>
-            <span className="font-mono font-bold px-2 py-0.5 rounded bg-amber-400 text-slate-950">
-              {localConfig.thermalPrinter.printDarkness ?? 35}% ({(localConfig.thermalPrinter.density || 'light').toUpperCase()})
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { label: 'Ultra Light 15%', darkness: 15, density: 'light' as const },
-              { label: 'Light ★ 35%', darkness: 35, density: 'light' as const },
-              { label: 'Medium 50%', darkness: 50, density: 'normal' as const },
-              { label: 'Dark 70%', darkness: 70, density: 'dark' as const },
-              { label: 'Extra Dark 90%', darkness: 90, density: 'dark' as const },
-            ].map((p) => {
-              const curr = localConfig.thermalPrinter.printDarkness ?? 35;
-              const isSel = Math.abs(curr - p.darkness) <= 6;
-              return (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => handleUpdatePrintDarkness(p.darkness, p.density)}
-                  className={`px-2.5 py-1 rounded-lg border font-mono font-bold text-[11px] transition cursor-pointer ${
-                    isSel
-                      ? 'bg-amber-400 border-amber-300 text-slate-950 shadow'
-                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-
-            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-slate-700">
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) - 5)
-                }
-                className="px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 font-mono text-[11px] font-bold cursor-pointer"
-              >
-                -5%
-              </button>
-              <input
-                type="range"
-                min={5}
-                max={100}
-                step={5}
-                value={localConfig.thermalPrinter.printDarkness ?? 35}
-                onChange={(e) =>
-                  handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
-                }
-                className="w-20 sm:w-28 accent-amber-400 cursor-pointer"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) + 5)
-                }
-                className="px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-200 font-mono text-[11px] font-bold cursor-pointer"
-              >
-                +5%
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Tab Content Body */}
         <div className="flex-1 overflow-y-auto p-6 text-white">
           {/* TAB 1: Live Telemetry */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              {/* Quick Printer Printout Darkness Control at Top of Admin */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-amber-950/30 border-2 border-amber-500/50 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Printer className="w-4 h-4 text-amber-400" />
-                      <h3 className="text-sm font-bold text-white">
-                        Printer Printout Darkness &amp; Burn Level
-                      </h3>
-                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950">
-                        Darkness: {localConfig.thermalPrinter.printDarkness ?? 35}% ({(localConfig.thermalPrinter.density || 'light').toUpperCase()})
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-300 mt-0.5">
-                      Control how dark or light your printer prints. Select <strong className="text-amber-300">Ultra Light (15%)</strong> or <strong className="text-amber-300">Light ★ (35%)</strong> for lighter, clearer faces.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={isTestPrinting}
-                      onClick={handleTestPrint}
-                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                    >
-                      {isTestPrinting ? 'Printing...' : 'Test Print Darkness'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {[
-                    { label: 'Ultra Light (15%)', darkness: 15, density: 'light' as const },
-                    { label: 'Light ★ (35%)', darkness: 35, density: 'light' as const },
-                    { label: 'Medium (50%)', darkness: 50, density: 'normal' as const },
-                    { label: 'Dark (70%)', darkness: 70, density: 'dark' as const },
-                    { label: 'Extra Dark (90%)', darkness: 90, density: 'dark' as const },
-                  ].map((preset) => {
-                    const currentDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
-                    const active = Math.abs(currentDarkness - preset.darkness) <= 6;
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => handleUpdatePrintDarkness(preset.darkness, preset.density)}
-                        className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
-                          active
-                            ? 'bg-amber-400 border-amber-300 text-slate-950 shadow-sm'
-                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) - 5)
-                    }
-                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
-                  >
-                    -5% Lighter
-                  </button>
-                  <input
-                    type="range"
-                    min={5}
-                    max={100}
-                    step={5}
-                    value={localConfig.thermalPrinter.printDarkness ?? 35}
-                    onChange={(e) =>
-                      handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
-                    }
-                    className="flex-1 accent-amber-400 cursor-pointer"
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdatePrintDarkness((localConfig.thermalPrinter.printDarkness ?? 35) + 5)
-                    }
-                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
-                  >
-                    +5% Darker
-                  </button>
-                </div>
-              </div>
-
-              {/* Quick Edit Price Per Layout Card */}
-              <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/40 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-emerald-400" />
-                      <h3 className="text-sm font-bold text-white">
-                        Price Per Layout (&quot;Pick your layout&quot; Screen)
-                      </h3>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Edit the price shown on each photo layout card. Changes apply immediately.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {(
-                    [
-                      { id: 'single_polaroid' as FrameLayoutType, label: 'Polaroid (1 shot)', fallback: 20 },
-                      { id: 'grid_4' as FrameLayoutType, label: 'Grid (2 shots)', fallback: 25 },
-                      { id: 'strip_3' as FrameLayoutType, label: 'Grid (3 shots)', fallback: 30 },
-                      { id: 'strip_4' as FrameLayoutType, label: '4-Cut Strip (4 shots)', fallback: 40 },
-                    ]
-                  ).map((item) => {
-                    const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
-                    return (
-                      <div
-                        key={item.id}
-                        className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1.5"
-                      >
-                        <label className="text-[11px] font-bold text-slate-300">
-                          {item.label}
-                        </label>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-mono text-emerald-400 font-bold">P</span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={5}
-                            value={priceVal}
-                            onChange={(e) =>
-                              handleUpdateLayoutPrice(item.id, Number(e.target.value))
-                            }
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold text-xs focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Top Key Metrics Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
@@ -2855,260 +2637,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Printer Printout Darkness & Thermal Head Ink Burn Control */}
-              <div className="p-5 bg-slate-900 border border-amber-500/40 rounded-2xl space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm sm:text-base font-bold text-white">
-                        Printer Printout Darkness &amp; Thermal Burn Level
-                      </h4>
-                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                        Master Control
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-300 mt-1">
-                      Directly controls how dark or light your printer prints on paper. Lowering Darkness (<strong className="text-amber-300">15% – 35%</strong>) reduces black thermal ink on faces, hair, and shadows so photos never look overly dark.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="font-mono font-bold text-xs sm:text-sm px-3.5 py-1.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                      Darkness: {localConfig.thermalPrinter.printDarkness ?? 35}%
-                    </span>
-                  </div>
-                </div>
-
-                {/* 1. One-Tap Darkness Presets */}
-                <div>
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2">
-                    1. Select Printout Darkness Level:
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {[
-                      {
-                        label: 'Ultra Light',
-                        sub: '15% Ink • Brightest Faces',
-                        darkness: 15,
-                        density: 'light' as const,
-                      },
-                      {
-                        label: 'Light ★ Recommended',
-                        sub: '35% Ink • Clear Portraits',
-                        darkness: 35,
-                        density: 'light' as const,
-                      },
-                      {
-                        label: 'Medium Standard',
-                        sub: '50% Ink • Balanced',
-                        darkness: 50,
-                        density: 'normal' as const,
-                      },
-                      {
-                        label: 'Dark',
-                        sub: '70% Ink • Deep Contrast',
-                        darkness: 70,
-                        density: 'dark' as const,
-                      },
-                      {
-                        label: 'Extra Dark',
-                        sub: '90% Ink • Max Burn',
-                        darkness: 90,
-                        density: 'dark' as const,
-                      },
-                    ].map((preset) => {
-                      const currentDarkness = localConfig.thermalPrinter.printDarkness ?? 35;
-                      const active = Math.abs(currentDarkness - preset.darkness) <= 6;
-                      return (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          onClick={() => handleUpdatePrintDarkness(preset.darkness, preset.density)}
-                          className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
-                            active
-                              ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-md'
-                              : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
-                          }`}
-                        >
-                          <div className="font-bold text-xs">{preset.label}</div>
-                          <div
-                            className={`text-[10px] font-mono mt-1 ${
-                              active ? 'text-slate-900 font-semibold' : 'text-slate-400'
-                            }`}
-                          >
-                            {preset.sub}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 2. Fine Printout Darkness Slider (5% to 100%) */}
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400 font-mono">
-                      Fine Darkness Adjustment (5% Lightest — 100% Darkest)
-                    </span>
-                    <span className="font-mono font-bold text-amber-300">
-                      {localConfig.thermalPrinter.printDarkness ?? 35}% Darkness (Photo Lift:{' '}
-                      {(localConfig.thermalPrinter.brightness ?? 45) >= 0
-                        ? `+${localConfig.thermalPrinter.brightness ?? 45}%`
-                        : `${localConfig.thermalPrinter.brightness ?? 45}%`}
-                      )
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdatePrintDarkness(
-                          (localConfig.thermalPrinter.printDarkness ?? 35) - 5
-                        )
-                      }
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-200 font-mono text-xs font-bold cursor-pointer shrink-0"
-                    >
-                      -5% Lighter
-                    </button>
-
-                    <input
-                      type="range"
-                      min={5}
-                      max={100}
-                      step={5}
-                      value={localConfig.thermalPrinter.printDarkness ?? 35}
-                      onChange={(e) =>
-                        handleUpdatePrintDarkness(Number(e.target.value), undefined, false)
-                      }
-                      className="flex-1 accent-amber-400 cursor-pointer"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdatePrintDarkness(
-                          (localConfig.thermalPrinter.printDarkness ?? 35) + 5
-                        )
-                      }
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-200 font-mono text-xs font-bold cursor-pointer shrink-0"
-                    >
-                      +5% Darker
-                    </button>
-                  </div>
-
-                  {/* Visual Ink Density Bar */}
-                  <div className="h-2 w-full rounded-full bg-gradient-to-r from-zinc-100 via-zinc-500 to-zinc-950 relative overflow-hidden border border-slate-700">
-                    <div
-                      className="absolute top-0 bottom-0 w-2 bg-amber-400 rounded-full shadow"
-                      style={{
-                        left: `calc(${Math.max(
-                          2,
-                          Math.min(98, localConfig.thermalPrinter.printDarkness ?? 35)
-                        )}% - 4px)`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* 3. Hardware Thermal Head Burn Density Mode + Instant Test Print */}
-                <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-bold text-white">
-                      Hardware Thermal Head Burn Energy (ESC/POS &amp; Spooler Density)
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      Select <strong>Light Burn</strong> if your thermal paper roll is sensitive and prints faces too dark.
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    {(
-                      [
-                        { id: 'light', label: 'Light Burn (Cool)' },
-                        { id: 'normal', label: 'Normal Burn' },
-                        { id: 'dark', label: 'Dark Burn (Hot)' },
-                      ] as const
-                    ).map((modeItem) => {
-                      const isCurr =
-                        (localConfig.thermalPrinter.density || 'light') === modeItem.id;
-                      return (
-                        <button
-                          key={modeItem.id}
-                          type="button"
-                          onClick={async () => {
-                            soundEffects.playTap();
-                            const updated: RemoteKioskConfig = {
-                              ...localConfig,
-                              thermalPrinter: {
-                                ...localConfig.thermalPrinter,
-                                density: modeItem.id,
-                              },
-                            };
-                            setLocalConfig(updated);
-                            await remoteConfigService.updateConfig(updated);
-                            onUpdateConfig(updated);
-                          }}
-                          className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
-                            isCurr
-                              ? 'bg-emerald-600 border-emerald-500 text-white'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {modeItem.label}
-                        </button>
-                      );
-                    })}
-
-                    <button
-                      type="button"
-                      disabled={isTestPrinting}
-                      onClick={handleTestPrint}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition cursor-pointer disabled:opacity-50"
-                    >
-                      {isTestPrinting ? 'Printing...' : 'Test Darkness Slip'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Default Print Copies per Session */}
-              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-bold text-white mb-1">Default Print Copies per Session</h4>
-                  <p className="text-xs text-slate-400">
-                    Choose the default number of copies (1, 2, 3, 4, 5+) pre-selected for each guest session. Guests can also adjust copies on screen.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                  {[1, 2, 3, 4, 5, 6].map((copiesNum) => (
-                    <button
-                      key={copiesNum}
-                      type="button"
-                      onClick={async () => {
-                        soundEffects.playTap();
-                        const updated: RemoteKioskConfig = {
-                          ...localConfig,
-                          thermalPrinter: {
-                            ...localConfig.thermalPrinter,
-                            printCopies: copiesNum,
-                          },
-                        };
-                        setLocalConfig(updated);
-                        await remoteConfigService.updateConfig(updated);
-                        onUpdateConfig(updated);
-                      }}
-                      className={`px-3.5 py-2 rounded-xl border font-mono font-bold text-xs transition cursor-pointer ${
-                        (localConfig.thermalPrinter.printCopies || 1) === copiesNum
-                          ? 'bg-emerald-600 border-emerald-500 text-white'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {copiesNum} {copiesNum === 1 ? 'Copy' : 'Copies'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Hardware Test Calibration Slip */}
               <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
@@ -3161,6 +2689,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <button
                     type="button"
+                    data-no-fullscreen-enforce="true"
                     onClick={handleToggleFullscreenKiosk}
                     className={`px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition shrink-0 cursor-pointer ${
                       isFullscreenLocked
@@ -3272,17 +2801,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-slate-400 block mb-1">Session Price ({localConfig.currencySymbol})</label>
-                    <input
-                      type="number"
-                      step="5"
-                      value={localConfig.pricePerSession}
-                      onChange={(e) => setLocalConfig({ ...localConfig, pricePerSession: Number(e.target.value) })}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
-                    />
-                  </div>
-
-                  <div>
                     <label className="text-slate-400 block mb-1">Admin Security PIN</label>
                     <input
                       type="password"
@@ -3294,60 +2812,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Edit Price Per Layout Section inside Remote Config */}
-                <div className="pt-3 border-t border-slate-800 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <DollarSign className="w-3.5 h-3.5" />
-                      <span>Price Per Layout (&quot;Pick your layout&quot; Screen)</span>
-                    </h4>
-                    <span className="text-[11px] text-slate-400">Auto-saves as you type</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    {(
-                      [
-                        { id: 'single_polaroid' as FrameLayoutType, label: 'Polaroid (1 shot)', fallback: 20 },
-                        { id: 'grid_4' as FrameLayoutType, label: 'Grid (2 shots)', fallback: 25 },
-                        { id: 'strip_3' as FrameLayoutType, label: 'Grid (3 shots)', fallback: 30 },
-                        { id: 'strip_4' as FrameLayoutType, label: '4-Cut Strip (4 shots)', fallback: 40 },
-                      ]
-                    ).map((item) => {
-                      const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
-                      return (
-                        <div key={item.id} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                          <label className="text-slate-400 block mb-1 font-semibold text-[11px]">
-                            {item.label}
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-emerald-400 font-mono font-bold">P</span>
-                            <input
-                              type="number"
-                              min={0}
-                              step={5}
-                              value={priceVal}
-                              onChange={(e) =>
-                                handleUpdateLayoutPrice(item.id, Number(e.target.value))
-                              }
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800">
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={localConfig.freePlayMode}
-                        onChange={(e) => setLocalConfig({ ...localConfig, freePlayMode: e.target.checked })}
-                        className="rounded accent-emerald-500"
-                      />
-                      <span className="font-bold text-white">Free Play Mode (Bypass Payment Step for Open Events)</span>
-                    </label>
                     <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                       <input
                         type="checkbox"
@@ -3429,6 +2895,119 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </button>
                   </div>
                 )}
+
+                {/* FREE PLAY MODE & PRICE PER LAYOUT CONFIGURATION */}
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 border-2 border-emerald-500/40 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Sparkles className="w-4 h-4 text-emerald-400" />
+                        <h3 className="text-sm sm:text-base font-bold text-white">
+                          Free Play Mode (Open Event Pass)
+                        </h3>
+                        <span
+                          className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                            localConfig.freePlayMode
+                              ? 'bg-emerald-500 text-slate-950'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          {localConfig.freePlayMode ? 'FREE PLAY ACTIVE' : 'VOUCHER REQUIRED'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-1">
+                        When enabled, guests bypass the voucher code screen and can take &amp; print photos freely for open events or parties.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        soundEffects.playTap();
+                        const nextFreePlay = !localConfig.freePlayMode;
+                        const updated: RemoteKioskConfig = {
+                          ...localConfig,
+                          freePlayMode: nextFreePlay,
+                        };
+                        setLocalConfig(updated);
+                        await remoteConfigService.updateConfig(updated);
+                        onUpdateConfig(updated);
+                        setVoucherFeedbackMsg(
+                          nextFreePlay
+                            ? 'Free Play Mode enabled — guests can print without a voucher code.'
+                            : 'Free Play Mode disabled — guests must enter a single-use layout voucher.'
+                        );
+                      }}
+                      className={`px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition shrink-0 cursor-pointer ${
+                        localConfig.freePlayMode
+                          ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                          : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-600'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {localConfig.freePlayMode
+                          ? 'Disable Free Play Mode'
+                          : 'Enable Free Play Mode'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Price Per Layout Editor */}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4 text-emerald-400" />
+                          <h4 className="text-sm font-bold text-white">
+                            Price Per Layout (&quot;Pick your layout&quot; Screen)
+                          </h4>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Edit the price displayed on each layout card and cashier voucher. Auto-saves immediately.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {(
+                        [
+                          { id: 'single_polaroid' as FrameLayoutType, label: 'Polaroid (1 shot)', fallback: 20 },
+                          { id: 'grid_4' as FrameLayoutType, label: 'Grid (2 shots)', fallback: 25 },
+                          { id: 'strip_3' as FrameLayoutType, label: 'Grid (3 shots)', fallback: 30 },
+                          { id: 'strip_4' as FrameLayoutType, label: '4-Cut Strip (4 shots)', fallback: 40 },
+                        ]
+                      ).map((item) => {
+                        const priceVal = localConfig.layoutPrices?.[item.id] ?? item.fallback;
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-1.5"
+                          >
+                            <label className="text-[11px] font-bold text-slate-300">
+                              {item.label}
+                            </label>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-mono text-emerald-400 font-bold">
+                                {localConfig.currencySymbol || 'P'}
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                step={5}
+                                value={priceVal}
+                                onChange={(e) =>
+                                  handleUpdateLayoutPrice(item.id, Number(e.target.value))
+                                }
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono font-bold text-xs focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
 
                 {/* Quick Summary Counters */}
                 <div className="grid grid-cols-3 gap-3">

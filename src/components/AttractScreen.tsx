@@ -256,15 +256,17 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
   const theme = getAttractThemeById(activeThemeId);
 
-  // Secret corner multi-tap for kiosk operators
-  const handleLogoTap = () => {
+  // Secret multi-tap on title/logo for kiosk operators (4 rapid taps unlocks to minimize & opens Admin)
+  const handleLogoTap = (e: React.MouseEvent) => {
+    e.stopPropagation();
     soundEffects.playTap();
     const next = adminTapCount + 1;
-    setAdminTapCount(next);
     if (next >= 4) {
       setAdminTapCount(0);
       onSecretAdminTap();
+      return;
     }
+    setAdminTapCount(next);
   };
 
   useEffect(() => {
@@ -451,8 +453,12 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
 
       {/* Hero Visual Area: Occasion Envelope with Fan-out Photostrips */}
       <div className="my-auto z-10 flex flex-col items-center text-center max-w-md w-full py-4">
-        {/* Title branding lockup */}
-        <div className="mb-2 text-center">
+        {/* Title branding lockup (4 rapid taps unlocks to minimize & opens Admin) */}
+        <div
+          data-no-fullscreen-enforce="true"
+          onClick={handleLogoTap}
+          className="mb-2 text-center cursor-pointer"
+        >
           <h1
             className={`text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight mb-1 ${theme.heroTitleClass}`}
           >
@@ -662,9 +668,11 @@ export const AttractScreen: React.FC<AttractScreenProps> = ({
               className={`absolute -top-3 w-6 h-6 border-b border-r transform rotate-45 rounded-br-sm shadow-2xs ${theme.envelopeFlapClass}`}
             />
 
-            {/* Occasion Emblem Seal Badge */}
+            {/* Occasion Emblem Seal Badge (4 rapid taps unlocks to minimize & opens Admin) */}
             <div
-              className={`flex flex-col items-center gap-1 z-10 px-5 py-2 rounded-full pointer-events-auto ${theme.envelopeSealClass}`}
+              data-no-fullscreen-enforce="true"
+              onClick={handleLogoTap}
+              className={`flex flex-col items-center gap-1 z-10 px-5 py-2 rounded-full pointer-events-auto cursor-pointer ${theme.envelopeSealClass}`}
             >
               <div
                 className={`text-xs font-bold tracking-widest uppercase flex items-center gap-2 ${theme.envelopeSealTitleClass}`}
