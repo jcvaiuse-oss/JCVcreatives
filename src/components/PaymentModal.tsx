@@ -90,16 +90,36 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-[10px] uppercase font-mono tracking-widest text-zinc-600 mb-3">
             <Ticket className="w-3.5 h-3.5 text-zinc-700" />
-            <span>Voucher Payment</span>
+            <span>1 Voucher = 1 Print Copy</span>
           </div>
 
           {/* Session Title & Price */}
           <h2 className="text-xl sm:text-2xl font-extrabold text-zinc-950 tracking-tight mb-1">
-            Enter Voucher Code
+            Enter Layout Voucher Code
           </h2>
-          <p className="text-xs text-zinc-500 mb-6">
-            Session value: <span className="font-semibold text-zinc-800">{config.currencySymbol}{config.pricePerSession.toFixed(2)}</span>
+          <p className="text-xs text-zinc-500 mb-4">
+            Enter your single-use cashier voucher for 1-Shot, 2-Shot, 3-Shot, or 4-Shot
           </p>
+
+          {/* Layout Price Summary Chips */}
+          <div className="grid grid-cols-4 gap-1.5 w-full mb-4 text-[10px]">
+            {[
+              { id: 'single_polaroid' as const, label: '1-Shot', fallback: 20 },
+              { id: 'grid_4' as const, label: '2-Shot', fallback: 25 },
+              { id: 'strip_3' as const, label: '3-Shot', fallback: 30 },
+              { id: 'strip_4' as const, label: '4-Shot', fallback: 40 },
+            ].map((item) => (
+              <div
+                key={item.id}
+                className="py-1.5 px-1 rounded-xl bg-white border border-zinc-200 flex flex-col items-center shadow-2xs"
+              >
+                <span className="font-bold text-zinc-800">{item.label}</span>
+                <span className="font-mono text-zinc-500">
+                  P{config.layoutPrices?.[item.id] ?? item.fallback}
+                </span>
+              </div>
+            ))}
+          </div>
 
           {/* Voucher Code Entry Form */}
           <form onSubmit={handleRedeemVoucher} className="w-full space-y-3 bg-white p-5 rounded-2xl border border-zinc-200 shadow-xs">
@@ -128,7 +148,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               disabled={isProcessing}
               className="w-full py-3.5 rounded-full bg-black hover:bg-zinc-800 active:scale-98 text-white font-semibold text-sm transition cursor-pointer shadow-sm"
             >
-              {isProcessing ? 'Validating...' : 'Apply Voucher'}
+              {isProcessing ? 'Validating...' : 'Redeem Voucher (1 Print Copy)'}
             </button>
           </form>
 

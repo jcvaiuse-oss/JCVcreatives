@@ -121,6 +121,7 @@ export interface Voucher {
   lastUsedAt?: number;
   batchName?: string;
   isCashierTicket?: boolean;
+  layoutType?: FrameLayoutType; // 1-Shot ('single_polaroid'), 2-Shot ('grid_4'), 3-Shot ('strip_3'), 4-Shot ('strip_4')
 }
 
 export interface PaymentTransaction {
@@ -131,6 +132,7 @@ export interface PaymentTransaction {
   status: 'pending' | 'completed' | 'failed';
   timestamp: number;
   voucherCode?: string;
+  layoutType?: FrameLayoutType;
   kioskId: string;
 }
 

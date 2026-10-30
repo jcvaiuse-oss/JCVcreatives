@@ -43,9 +43,7 @@ export default function App() {
   const [selectedLayout, setSelectedLayout] = useState<FrameLayoutType>('strip_3');
   const [selectedTheme, setSelectedTheme] = useState<FrameTheme>(FRAME_THEMES[0]);
   const [selectedFilter, setSelectedFilter] = useState<PhotoFilterType>('none');
-  const [selectedCopies, setSelectedCopies] = useState<number>(
-    Math.max(1, config.thermalPrinter?.printCopies || 1)
-  );
+  const [selectedCopies, setSelectedCopies] = useState<number>(1);
   const [selectedBrightness, setSelectedBrightness] = useState<number>(
     config.thermalPrinter?.brightness ?? 45
   );
@@ -63,7 +61,7 @@ export default function App() {
       .init()
       .then((loadedConfig) => {
         setConfig(loadedConfig);
-        setSelectedCopies(Math.max(1, loadedConfig.thermalPrinter?.printCopies || 1));
+        setSelectedCopies(1);
         setSelectedBrightness(loadedConfig.thermalPrinter?.brightness ?? 45);
       })
       .catch(() => {});
@@ -92,7 +90,7 @@ export default function App() {
   // Handler: Start Session from Attract screen
   const handleStartSession = React.useCallback(() => {
     setSessionStartTime(Date.now());
-    setSelectedCopies(Math.max(1, config.thermalPrinter?.printCopies || 1));
+    setSelectedCopies(1); // 1 Voucher = 1 Print Copy
     setSelectedBrightness(config.thermalPrinter?.brightness ?? 45);
     soundEffects.playTap();
 
@@ -110,13 +108,16 @@ export default function App() {
   }, [
     config.freePlayMode,
     config.autoFullscreenLock,
-    config.thermalPrinter?.printCopies,
     config.thermalPrinter?.brightness,
   ]);
 
   // Handler: Payment Succeeded
   const handlePaymentSuccess = (tx: PaymentTransaction) => {
     setActivePayment(tx);
+    setSelectedCopies(1); // 1 Voucher = 1 Print Copy
+    if (tx.layoutType) {
+      setSelectedLayout(tx.layoutType);
+    }
     setCurrentScreen('frame_select');
   };
 
@@ -160,7 +161,7 @@ export default function App() {
     setFinalizedResult(null);
     setFinalizedCanvas(null);
     setActivePayment(null);
-    setSelectedCopies(Math.max(1, config.thermalPrinter?.printCopies || 1));
+    setSelectedCopies(1);
     setCurrentScreen('attract');
   };
 
@@ -212,9 +213,11 @@ export default function App() {
             onSelectTheme={setSelectedTheme}
             selectedFilter={selectedFilter}
             onSelectFilter={setSelectedFilter}
-            copies={selectedCopies}
+            copies={1}
             onSelectCopies={setSelectedCopies}
             layoutPrices={config.layoutPrices}
+            lockedLayout={activePayment?.layoutType}
+            voucherCode={activePayment?.voucherCode}
             onContinue={() => setCurrentScreen('capture')}
             onBack={handleResetToAttract}
           />

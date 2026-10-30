@@ -68,7 +68,7 @@ import {
   safeStorageRemove,
 } from '../services/storage';
 import { emailDeliveryService } from '../services/email';
-import { paymentService } from '../services/payment';
+import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
 import {
   ATTRACT_OCCASION_THEMES,
@@ -174,11 +174,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newVoucherDesc, setNewVoucherDesc] = useState('');
 
   // Cashier Batch Voucher Generator state
+  const [batchLayoutType, setBatchLayoutType] = useState<FrameLayoutType>('strip_3');
   const [batchCount, setBatchCount] = useState<number>(20);
-  const [batchPrefix, setBatchPrefix] = useState<string>('JCV');
+  const [batchPrefix, setBatchPrefix] = useState<string>('3S');
   const [batchMaxUses, setBatchMaxUses] = useState<number>(1);
   const [batchDiscount, setBatchDiscount] = useState<number>(100);
-  const [batchLabel, setBatchLabel] = useState<string>('Cashier Paid Pass');
+  const [batchLabel, setBatchLabel] = useState<string>('3-Shot (Grid) • 1 Print Copy');
   const [lastGeneratedBatch, setLastGeneratedBatch] = useState<Voucher[]>([]);
   const [voucherFilter, setVoucherFilter] = useState<'all' | 'available' | 'used'>('all');
   const [voucherSearch, setVoucherSearch] = useState<string>('');
@@ -650,13 +651,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     soundEffects.playTap();
     const qty = Math.max(1, Math.min(500, Number(batchCount) || 1));
+    const layoutMeta = LAYOUT_VOUCHER_META[batchLayoutType];
 
     const generated = await paymentService.generateCashierVouchersBatch({
       count: qty,
-      prefix: batchPrefix || 'JCV',
+      prefix: batchPrefix || layoutMeta.prefix,
       discountPercent: Number(batchDiscount) || 100,
-      maxUses: Math.max(1, Number(batchMaxUses) || 1),
-      batchName: batchLabel.trim() || 'Cashier Paid Pass',
+      maxUses: 1, // 1 Voucher = 1 Print Copy (Single-Use)
+      batchName: batchLabel.trim() || `${layoutMeta.label} • 1 Print Copy`,
+      layoutType: batchLayoutType,
     });
 
     const updated = await storageService.getAllVouchers();
@@ -665,7 +668,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setShowTicketSheet(true);
     soundEffects.playSuccessChime();
     setVoucherFeedbackMsg(
-      `✓ Generated ${generated.length} offline cashier voucher${generated.length > 1 ? 's' : ''}! Ready to give to customers.`
+      `✓ Generated ${generated.length} single-use ${layoutMeta.label} voucher${
+        generated.length > 1 ? 's' : ''
+      } (1 Voucher = 1 Print Copy)!`
     );
     setTimeout(() => setVoucherFeedbackMsg(null), 4500);
   };
@@ -780,10 +785,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ctx.lineWidth = 2;
       ctx.strokeRect(16, top + 12, width - 32, slipHeight - 24);
 
+      const vMeta = v.layoutType ? LAYOUT_VOUCHER_META[v.layoutType] : undefined;
+      const vPrice = v.layoutType
+        ? localConfig.layoutPrices?.[v.layoutType] ?? vMeta?.defaultPrice ?? 30
+        : localConfig.pricePerSession;
+
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 12px monospace';
       ctx.fillText(
-        `#${idx + 1} • JCVCREATIVES PHOTOBOOTH PASS (${localConfig.currencySymbol}${localConfig.pricePerSession.toFixed(0)})`,
+        `#${idx + 1} • ${vMeta ? vMeta.label.toUpperCase() : 'PHOTOBOOTH PASS'} (P${vPrice})`,
         width / 2,
         top + 36
       );
@@ -792,7 +802,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ctx.fillText(v.code, width / 2, top + 74);
 
       ctx.font = '11px monospace';
-      ctx.fillText('Enter this code on the photobooth screen • 1 Use', width / 2, top + 100);
+      ctx.fillText('1 VOUCHER = 1 PRINT COPY • SINGLE USE', width / 2, top + 100);
     });
 
     const res = await thermalPrinterService.print(canvas, localConfig.thermalPrinter);
@@ -3446,24 +3456,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="flex items-center gap-2">
                         <Ticket className="w-5 h-5 text-pink-400" />
                         <h3 className="text-sm sm:text-base font-bold text-white">
-                          Cashier Batch Voucher Generator (Offline Ready)
+                          Cashier Single-Use Layout Voucher Generator
                         </h3>
                       </div>
                       <p className="text-xs text-slate-300 mt-1">
-                        Enter how many vouchers to generate. The cashier keeps these codes and gives one to each customer after paying ({localConfig.currencySymbol}
-                        {localConfig.pricePerSession.toFixed(2)}). Once the customer enters a code on the payment screen, it is automatically marked as <span className="text-amber-300 font-semibold">USED</span>.
+                        Issue single-use layout vouchers based on customer choice (<strong className="text-white">1-Shot, 2-Shot, 3-Shot, or 4-Shot</strong>). <strong className="text-amber-300">1 Voucher = 1 Print Copy</strong>. Once redeemed at the kiosk, the voucher is automatically marked as <strong className="text-rose-400">SPENT / USED</strong>.
                       </p>
                     </div>
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-[11px] font-mono shrink-0">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Works Offline</span>
+                      <span>1 Voucher = 1 Copy</span>
                     </span>
+                  </div>
+
+                  {/* Step 1: Select Layout Type (1-Shot, 2-Shot, 3-Shot, 4-Shot) */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs text-slate-300 font-bold block">
+                      1. Choose Layout Type for Voucher Batch:
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {(
+                        [
+                          'single_polaroid',
+                          'grid_4',
+                          'strip_3',
+                          'strip_4',
+                        ] as FrameLayoutType[]
+                      ).map((lType) => {
+                        const meta = LAYOUT_VOUCHER_META[lType];
+                        const price = localConfig.layoutPrices?.[lType] ?? meta.defaultPrice;
+                        const active = batchLayoutType === lType;
+                        return (
+                          <button
+                            key={lType}
+                            type="button"
+                            onClick={() => {
+                              soundEffects.playTap();
+                              setBatchLayoutType(lType);
+                              setBatchPrefix(meta.prefix);
+                              setBatchMaxUses(1);
+                              setBatchLabel(`${meta.label} • 1 Print Copy`);
+                            }}
+                            className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                              active
+                                ? 'bg-pink-600/25 border-pink-400 text-white shadow-md'
+                                : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span>{meta.label}</span>
+                              <span className="font-mono text-emerald-400">P{price}</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400 mt-1">
+                              Prefix: {meta.prefix}-XXXX • 1 Copy
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Quick Quantity Presets */}
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-slate-400 font-medium">Quick Quantity:</span>
-                    {[5, 10, 20, 50, 100].map((preset) => (
+                    <span className="text-slate-400 font-medium">2. Quick Quantity:</span>
+                    {[1, 5, 10, 20, 50, 100].map((preset) => (
                       <button
                         key={preset}
                         type="button"
@@ -3477,14 +3533,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
                         }`}
                       >
-                        {preset} Vouchers
+                        {preset} {preset === 1 ? 'Voucher' : 'Vouchers'}
                       </button>
                     ))}
                   </div>
 
                   <form
                     onSubmit={handleGenerateCashierBatch}
-                    className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end text-xs pt-1"
+                    className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end text-xs pt-1"
                   >
                     <div>
                       <label className="text-slate-300 font-semibold block mb-1">
@@ -3507,20 +3563,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         maxLength={6}
                         value={batchPrefix}
                         onChange={(e) => setBatchPrefix(e.target.value.toUpperCase())}
-                        placeholder="JCV"
+                        placeholder="3S"
                         className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-slate-400 block mb-1">Uses per Code</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={batchMaxUses}
-                        onChange={(e) => setBatchMaxUses(Math.max(1, Number(e.target.value) || 1))}
-                        className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
                       />
                     </div>
 
@@ -3530,7 +3574,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         type="text"
                         value={batchLabel}
                         onChange={(e) => setBatchLabel(e.target.value)}
-                        placeholder="Cashier Paid Pass"
+                        placeholder="3-Shot (Grid) • 1 Print Copy"
                         className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white"
                       />
                     </div>
@@ -3540,7 +3584,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="w-full py-2.5 px-4 rounded-xl bg-pink-600 hover:bg-pink-500 active:scale-98 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-pink-600/20 transition cursor-pointer"
                     >
                       <Sparkles className="w-4 h-4" />
-                      <span>Generate {batchCount} Vouchers</span>
+                      <span>
+                        Generate {batchCount} ({LAYOUT_VOUCHER_META[batchLayoutType].shortLabel})
+                      </span>
                     </button>
                   </form>
                 </div>
@@ -3660,22 +3706,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 {v.code}
                               </div>
 
-                              <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-800/80 pt-1.5 mt-1">
-                                <span>
-                                  {localConfig.currencySymbol}
-                                  {localConfig.pricePerSession.toFixed(0)} Paid
-                                </span>
-                                <span className="font-mono">
-                                  {v.usedCount}/{v.maxUses > 0 ? v.maxUses : '∞'}
-                                </span>
+                                <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-800/80 pt-1.5 mt-1">
+                                  <span>
+                                    {v.layoutType
+                                      ? `${LAYOUT_VOUCHER_META[v.layoutType].shortLabel} • P${
+                                          localConfig.layoutPrices?.[v.layoutType] ??
+                                          LAYOUT_VOUCHER_META[v.layoutType].defaultPrice
+                                        }`
+                                      : `1 Print Copy`}
+                                  </span>
+                                  <span className="font-mono">
+                                    {v.usedCount}/{v.maxUses > 0 ? v.maxUses : '∞'}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 {/* Create single custom voucher card */}
                 <form

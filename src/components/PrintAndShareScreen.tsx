@@ -18,18 +18,12 @@ import {
   X,
   Send,
   Loader2,
-  Minus,
-  Plus,
-  Sun,
+  Ticket,
 } from 'lucide-react';
 import { PhotostripResult, ThermalPrinterConfig, RemoteKioskConfig } from '../types';
-import {
-  THERMAL_FRAME_THEMES,
-  THERMAL_BRIGHTNESS_PRESETS,
-  renderPhotostripCanvas,
-} from '../services/frameTemplates';
 import { thermalPrinterService } from '../services/thermalPrinter';
 import { emailDeliveryService } from '../services/email';
+import { paymentService, LAYOUT_VOUCHER_META } from '../services/payment';
 import { soundEffects } from '../services/soundEffects';
 import { ThermalPrintPreviewModal } from './ThermalPrintPreviewModal';
 
@@ -50,25 +44,23 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   onDone,
   onOpenMobileShareModal,
 }) => {
-  const sessionCopies = Math.max(
-    1,
-    Math.min(50, Math.round(Number(copies || result.printCopies || config.thermalPrinter.printCopies || 1)))
-  );
-  const initialBrightness = result.thermalBrightness ?? config.thermalPrinter.brightness ?? 45;
+  const sessionCopies = 1; // 1 Voucher = 1 Print Copy for initial print
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showPrintAnotherCopyModal, setShowPrintAnotherCopyModal] = useState(false);
+  const [anotherCopyVoucherCode, setAnotherCopyVoucherCode] = useState('');
+  const [anotherCopyError, setAnotherCopyError] = useState('');
+  const [anotherCopySuccess, setAnotherCopySuccess] = useState('');
+  const [isRedeemingCopyVoucher, setIsRedeemingCopyVoucher] = useState(false);
   const [activeCanvas, setActiveCanvas] = useState<HTMLCanvasElement>(canvas);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printedSuccessfully, setPrintedSuccessfully] = useState(false);
   const [printStatusText, setPrintStatusText] = useState<string>('');
-  const [reprintCopies, setReprintCopies] = useState<number>(sessionCopies);
-  const [reprintBrightness, setReprintBrightness] = useState<number>(initialBrightness);
-  const [activeCopiesCount, setActiveCopiesCount] = useState<number>(sessionCopies);
+  const [activeCopiesCount, setActiveCopiesCount] = useState<number>(1);
   const [qrShareDataUrl, setQrShareDataUrl] = useState<string>('');
   const [thermalPreviewUrl, setThermalPreviewUrl] = useState<string>(result.thermalRasterDataUrl || '');
   const [countdownSeconds, setCountdownSeconds] = useState(60);
-  const brightnessChangedByUserRef = React.useRef<boolean>(false);
 
   // Email form states
   const [emailInput, setEmailInput] = useState('');
@@ -101,13 +93,13 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       setSilentBridgeReady(thermalPrinterService.isSilentBridgeActive());
     });
 
-    // Automatically print exact number of copies to connected USB / Wireless / Silent Bridge printer on session completion
+    // Automatically print 1 copy (1 Voucher = 1 Print Copy) to connected printer on session completion
     if (!hasAutoPrintedRef.current) {
       hasAutoPrintedRef.current = true;
-      setActiveCopiesCount(sessionCopies);
+      setActiveCopiesCount(1);
       const autoPrintConfig: ThermalPrinterConfig = {
         ...config.thermalPrinter,
-        printCopies: sessionCopies,
+        printCopies: 1,
       };
       setIsPrinting(true);
       thermalPrinterService
@@ -127,19 +119,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
         .catch(() => {
           setIsPrinting(false);
         });
-    }
-
-    // Automatically print to connected USB / Wireless / System printer on session completion
-    const currentPrinter = thermalPrinterService.getStatus();
-    if (currentPrinter.connectionType !== 'virtual') {
-      thermalPrinterService
-        .print(canvas, config.thermalPrinter, () => {})
-        .then((res) => {
-          if (res.success) {
-            setPrintedSuccessfully(true);
-          }
-        })
-        .catch(() => {});
     }
 
     try {
@@ -174,48 +153,6 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     }).then(setQrShareDataUrl);
   }, [result.shareUrl]);
 
-  // Re-render thermal canvas live whenever the user adjusts Print Brightness on this screen
-  useEffect(() => {
-    if (!brightnessChangedByUserRef.current) return;
-    let active = true;
-
-    async function rebuildThermalForBrightness() {
-      try {
-        const themeObj =
-          THERMAL_FRAME_THEMES.find((t) => t.id === result.themeId) || THERMAL_FRAME_THEMES[0];
-        const newThermalCanvas = await renderPhotostripCanvas({
-          photos: result.photos,
-          layout: result.layout,
-          theme: themeObj,
-          filter: 'noir',
-          eventTitle: themeObj.headerText,
-          eventSubtitle: themeObj.footerText,
-          stickers: result.stickers || [],
-          drawings: [],
-          isThermalMode: true,
-          thermalBrightness: reprintBrightness,
-        });
-        if (!active) return;
-        setActiveCanvas(newThermalCanvas);
-        const targetWidth = config.thermalPrinter.paperWidthMm === 80 ? 576 : 384;
-        const dithered = thermalPrinterService.generateDitheredRaster(
-          newThermalCanvas,
-          targetWidth,
-          1.0,
-          0
-        );
-        setThermalPreviewUrl(dithered.previewDataUrl);
-      } catch {
-        // ignore
-      }
-    }
-
-    rebuildThermalForBrightness();
-    return () => {
-      active = false;
-    };
-  }, [reprintBrightness, result, config.thermalPrinter.paperWidthMm]);
-
   // Auto return countdown
   useEffect(() => {
     if (countdownSeconds <= 0) {
@@ -230,20 +167,15 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     return () => clearInterval(timer);
   }, [countdownSeconds, onDone]);
 
-  // Execute print job with exact copy count (100% silent, never opens browser print dialog)
+  // Execute print job (1 Voucher = 1 Print Copy, 100% silent)
   const executePrintJob = async (
     targetCanvas: HTMLCanvasElement = activeCanvas,
     printerConfig: ThermalPrinterConfig = {
       ...config.thermalPrinter,
-      printCopies: reprintCopies,
+      printCopies: 1,
     }
   ) => {
-    const requestedCopies = Math.max(
-      1,
-      Math.min(50, Math.round(Number(printerConfig.printCopies || reprintCopies || 1)))
-    );
     soundEffects.playTap();
-    setActiveCopiesCount(requestedCopies);
     setIsPrinting(true);
     triggerFeedAnimation(true);
 
@@ -251,7 +183,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       targetCanvas,
       {
         ...printerConfig,
-        printCopies: requestedCopies,
+        printCopies: 1,
       },
       (_pct, status) => {
         setPrintStatusText(status);
@@ -298,6 +230,41 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
     soundEffects.playTap();
     const prefix = emailInput.split('@')[0] || '';
     setEmailInput(`${prefix}${domain}`);
+  };
+
+  // Redeem a new single-use voucher to print 1 additional copy
+  const handleRedeemPrintAnotherCopy = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const code = anotherCopyVoucherCode.trim();
+    if (!code) {
+      setAnotherCopyError('Please enter a new voucher code from the cashier');
+      return;
+    }
+
+    soundEffects.playTap();
+    setIsRedeemingCopyVoucher(true);
+    setAnotherCopyError('');
+    setAnotherCopySuccess('');
+
+    const res = await paymentService.redeemVoucher(code, config.kioskId, result.layout);
+    setIsRedeemingCopyVoucher(false);
+
+    if (res.success) {
+      setAnotherCopySuccess(res.message);
+      setActiveCopiesCount((prev) => prev + 1);
+      setCountdownSeconds(60);
+      setTimeout(() => {
+        setShowPrintAnotherCopyModal(false);
+        setAnotherCopyVoucherCode('');
+        setAnotherCopySuccess('');
+        executePrintJob(activeCanvas, {
+          ...config.thermalPrinter,
+          printCopies: 1,
+        });
+      }, 900);
+    } else {
+      setAnotherCopyError(res.message);
+    }
   };
 
   return (
@@ -406,99 +373,20 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           <span>Save Digital & Motion GIF</span>
         </button>
 
-        {/* Print Photo Brightness / Lightness Adjuster */}
-        <div className="p-2.5 rounded-2xl bg-white border border-zinc-200 shadow-2xs space-y-1.5">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold flex items-center gap-1">
-              <Sun className="w-3 h-3 text-amber-500" />
-              <span>Print Brightness</span>
-            </span>
-            <span className="text-[10px] font-mono font-bold text-zinc-900">
-              {reprintBrightness > 0 ? `+${reprintBrightness}%` : `${reprintBrightness}%`}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-5 gap-1">
-            {THERMAL_BRIGHTNESS_PRESETS.map((preset) => {
-              const isSelected = Math.abs(reprintBrightness - preset.value) <= 6;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  disabled={isPrinting}
-                  onClick={() => {
-                    soundEffects.playTap();
-                    brightnessChangedByUserRef.current = true;
-                    setReprintBrightness(preset.value);
-                  }}
-                  className={`py-1 px-1 rounded-lg text-[10px] font-bold transition cursor-pointer truncate ${
-                    isSelected
-                      ? 'bg-black text-white'
-                      : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
-                  }`}
-                  title={preset.description}
-                >
-                  {preset.shortLabel}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-2 px-0.5 pt-0.5">
-            <button
-              type="button"
-              disabled={isPrinting}
-              onClick={() => {
-                soundEffects.playTap();
-                brightnessChangedByUserRef.current = true;
-                setReprintBrightness((b) => Math.max(-30, b - 5));
-              }}
-              className="w-5 h-5 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 text-xs cursor-pointer shrink-0"
-            >
-              <Minus className="w-2.5 h-2.5" />
-            </button>
-            <input
-              type="range"
-              min={-30}
-              max={100}
-              step={5}
-              disabled={isPrinting}
-              value={reprintBrightness}
-              onChange={(e) => {
-                brightnessChangedByUserRef.current = true;
-                setReprintBrightness(Number(e.target.value));
-              }}
-              className="flex-1 accent-black cursor-pointer h-1"
-            />
-            <button
-              type="button"
-              disabled={isPrinting}
-              onClick={() => {
-                soundEffects.playTap();
-                brightnessChangedByUserRef.current = true;
-                setReprintBrightness((b) => Math.min(100, b + 5));
-              }}
-              className="w-5 h-5 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 text-zinc-700 text-xs cursor-pointer shrink-0"
-            >
-              <Plus className="w-2.5 h-2.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Button 4: Print with adjusted brightness */}
+        {/* Button 4: Print Another Copy (Requires New Single-Use Voucher) */}
         <button
           disabled={isPrinting}
-          onClick={() =>
-            executePrintJob(activeCanvas, {
-              ...config.thermalPrinter,
-              printCopies: sessionCopies,
-              brightness: reprintBrightness,
-            })
-          }
-          className="w-full py-2.5 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+          onClick={() => {
+            soundEffects.playTap();
+            setAnotherCopyVoucherCode('');
+            setAnotherCopyError('');
+            setAnotherCopySuccess('');
+            setShowPrintAnotherCopyModal(true);
+          }}
+          className="w-full py-2.5 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
         >
-          <Printer className="w-4 h-4 text-zinc-600 shrink-0" />
-          <span>{isPrinting ? 'Printing...' : 'Print my photos'}</span>
+          <Ticket className="w-4 h-4 text-zinc-700 shrink-0" />
+          <span>{isPrinting ? 'Printing Copy...' : 'Print Another Copy'}</span>
         </button>
 
         {/* Button 5: Ready? Let's snap! */}
@@ -718,6 +606,85 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
           onClose={() => setShowPrintPreview(false)}
         />
       )}
+
+      {/* Print Another Copy Voucher Redemption Screen */}
+      {showPrintAnotherCopyModal && (() => {
+        const layoutMeta = LAYOUT_VOUCHER_META[result.layout] || LAYOUT_VOUCHER_META.strip_3;
+        const unitPrice = config.layoutPrices?.[result.layout] ?? layoutMeta.defaultPrice;
+        return (
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+            <div className="bg-[#faf8f5] rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 flex flex-col items-center text-center">
+              <div className="w-full flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintAnotherCopyModal(false)}
+                  className="text-zinc-400 hover:text-zinc-900 p-1 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center font-bold text-base mb-3 shadow-sm">
+                <Ticket className="w-5 h-5" />
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-[10px] uppercase font-mono tracking-widest text-zinc-700 mb-2">
+                <span>1 Voucher = 1 Print Copy</span>
+              </div>
+
+              <h3 className="text-lg font-extrabold text-zinc-950 mb-1">
+                Print Another Copy
+              </h3>
+              <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
+                Buy a new <strong className="text-zinc-800">{layoutMeta.label}</strong> voucher (P{unitPrice}) from the cashier and enter your code below to print 1 additional copy.
+              </p>
+
+              <form onSubmit={handleRedeemPrintAnotherCopy} className="w-full space-y-3 bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs">
+                <input
+                  type="text"
+                  value={anotherCopyVoucherCode}
+                  onChange={(e) => {
+                    setAnotherCopyVoucherCode(e.target.value.toUpperCase());
+                    setAnotherCopyError('');
+                  }}
+                  placeholder="ENTER NEW VOUCHER CODE..."
+                  autoFocus
+                  autoComplete="off"
+                  className="w-full px-4 py-3 rounded-xl border border-zinc-300 bg-zinc-50 focus:bg-white text-center uppercase tracking-widest font-mono text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black transition"
+                />
+
+                {anotherCopyError && (
+                  <p className="text-xs font-medium text-rose-500">{anotherCopyError}</p>
+                )}
+                {anotherCopySuccess && (
+                  <p className="text-xs font-medium text-emerald-600">{anotherCopySuccess}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isRedeemingCopyVoucher}
+                  className="w-full py-3 rounded-full bg-black hover:bg-zinc-800 active:scale-98 text-white font-semibold text-xs sm:text-sm transition cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>
+                    {isRedeemingCopyVoucher
+                      ? 'Validating Voucher...'
+                      : 'Redeem Voucher & Print 1 Copy'}
+                  </span>
+                </button>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => setShowPrintAnotherCopyModal(false)}
+                className="mt-4 text-xs text-zinc-500 hover:text-zinc-900 font-medium cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 1-Click Auto-Print Setup Guide Modal */}
       {showAutoPrintGuide && (

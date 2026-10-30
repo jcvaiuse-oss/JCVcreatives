@@ -26,6 +26,8 @@ interface FrameSelectorProps {
   copies: number;
   onSelectCopies: (copies: number) => void;
   layoutPrices?: Record<FrameLayoutType, number>;
+  lockedLayout?: FrameLayoutType;
+  voucherCode?: string;
   onContinue: () => void;
   onBack: () => void;
 }
@@ -114,14 +116,15 @@ const MiniLiveVideo: React.FC<{
 export const FrameSelector: React.FC<FrameSelectorProps> = ({
   selectedLayout,
   onSelectLayout,
-  copies,
-  onSelectCopies,
   layoutPrices,
+  lockedLayout,
+  voucherCode,
   onContinue,
   onBack,
 }) => {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [facingMode] = useState<'user' | 'environment'>('user');
+  const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Initialize camera for live preview inside layout cards
@@ -191,7 +194,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
 
   const currentOption = LAYOUTS.find((l) => l.id === selectedLayout) || LAYOUTS[2];
   const currentUnitPrice = getPriceForLayout(currentOption);
-  const totalPrice = currentUnitPrice * copies;
+  const totalPrice = currentUnitPrice;
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 max-w-xl mx-auto w-full select-none text-zinc-900 overflow-y-auto">
@@ -230,19 +233,32 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
       </div>
 
       {/* 2x2 Layout Grid matching Still 44fabe33.jpeg with LIVE PREVIEW inside each card */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         {LAYOUTS.map((opt) => {
           const isSelected = selectedLayout === opt.id;
+          const isLockedOut = Boolean(lockedLayout && lockedLayout !== opt.id);
           return (
             <button
               key={opt.id}
               onClick={() => {
                 soundEffects.playTap();
+                if (isLockedOut) {
+                  const lockedObj = LAYOUTS.find((l) => l.id === lockedLayout);
+                  setLockedNotice(
+                    `Your voucher (${voucherCode || 'Active'}) is for ${
+                      lockedObj?.title || 'another layout'
+                    } (${lockedObj?.shots || 1}-Shot).`
+                  );
+                  return;
+                }
+                setLockedNotice(null);
                 onSelectLayout(opt.id);
               }}
               className={`relative p-3.5 rounded-2xl border transition-all text-center flex flex-col items-center justify-between cursor-pointer ${
                 isSelected
                   ? 'border-zinc-950 bg-white ring-2 ring-zinc-950/10 shadow-sm'
+                  : isLockedOut
+                  ? 'border-zinc-200 bg-zinc-50/70 opacity-50'
                   : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50/60 shadow-2xs'
               }`}
             >
@@ -335,35 +351,20 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
         })}
       </div>
 
-      {/* Bottom Controls matching Still 44fabe33.jpeg */}
-      <div className="mt-auto space-y-3.5 pt-2">
-        {/* Copies Stepper */}
-        <div className="flex flex-col items-center gap-1.5">
-          <div className="flex items-center justify-center gap-3 text-xs text-zinc-600 font-medium">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-400">Print Copies</span>
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.playTap();
-                onSelectCopies(Math.max(1, copies - 1));
-              }}
-              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <span className="font-bold text-base text-zinc-900 min-w-[24px] text-center">{copies}</span>
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.playTap();
-                onSelectCopies(Math.min(20, copies + 1));
-              }}
-              className="w-8 h-8 rounded-full border border-zinc-300 flex items-center justify-center hover:bg-zinc-100 active:scale-95 text-zinc-700 transition cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <span className="text-zinc-400">Total P{totalPrice}</span>
+      {/* Bottom Controls */}
+      <div className="mt-auto space-y-3 pt-2">
+        {lockedNotice && (
+          <div className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
+            {lockedNotice}
           </div>
+        )}
+
+        {/* 1 Voucher = 1 Print Copy Info Pill */}
+        <div className="flex items-center justify-center gap-2 text-xs text-zinc-600 font-medium">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-[11px] text-zinc-700 font-semibold">
+            <Ticket className="w-3.5 h-3.5 text-zinc-700" />
+            <span>1 Voucher = 1 Print Copy • P{totalPrice}</span>
+          </span>
         </div>
 
         {/* Big Black Pill Button: > Continue • P20 */}
@@ -373,7 +374,7 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
         >
           <ArrowRight className="w-4 h-4" />
           <span>
-            Continue ({copies} {copies === 1 ? 'Copy' : 'Copies'}) • P{totalPrice}
+            Continue (1 Print Copy) • P{totalPrice}
           </span>
         </button>
 

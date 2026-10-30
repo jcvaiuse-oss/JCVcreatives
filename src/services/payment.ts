@@ -4,9 +4,58 @@
  */
 
 import QRCode from 'qrcode';
-import { PaymentTransaction, Voucher } from '../types';
+import { FrameLayoutType, PaymentTransaction, Voucher } from '../types';
 import { storageService } from './storage';
 import { soundEffects } from './soundEffects';
+
+export const LAYOUT_VOUCHER_META: Record<
+  FrameLayoutType,
+  {
+    prefix: string;
+    label: string;
+    shortLabel: string;
+    shots: number;
+    defaultPrice: number;
+  }
+> = {
+  single_polaroid: {
+    prefix: '1S',
+    label: '1-Shot (Polaroid)',
+    shortLabel: '1-Shot',
+    shots: 1,
+    defaultPrice: 20,
+  },
+  grid_4: {
+    prefix: '2S',
+    label: '2-Shot (Grid)',
+    shortLabel: '2-Shot',
+    shots: 2,
+    defaultPrice: 25,
+  },
+  strip_3: {
+    prefix: '3S',
+    label: '3-Shot (Grid)',
+    shortLabel: '3-Shot',
+    shots: 3,
+    defaultPrice: 30,
+  },
+  strip_4: {
+    prefix: '4S',
+    label: '4-Shot (4-Cut Strip)',
+    shortLabel: '4-Shot',
+    shots: 4,
+    defaultPrice: 40,
+  },
+};
+
+export function inferLayoutFromPrefix(codeOrPrefix: string): FrameLayoutType | undefined {
+  const upper = codeOrPrefix.trim().toUpperCase();
+  if (upper.startsWith('1S') || upper.startsWith('JCV1')) return 'single_polaroid';
+  if (upper.startsWith('2S') || upper.startsWith('JCV2')) return 'grid_4';
+  if (upper.startsWith('3S') || upper.startsWith('JCV3')) return 'strip_3';
+  if (upper.startsWith('4S') || upper.startsWith('JCV4')) return 'strip_4';
+  return undefined;
+}
 
 const SEEDED_VOUCHERS: Voucher[] = [
   {
@@ -88,7 +137,7 @@ class PaymentService {
   }
 
   /**
-   * Batch generates single-use (or multi-use) cashier vouchers that work 100% offline.
+   * Batch generates single-use layout vouchers (1 Voucher = 1 Print Copy) that work 100% offline.
    */
   public async generateCashierVouchersBatch(options: {
     count: number;
@@ -97,18 +146,23 @@ class PaymentService {
     maxUses?: number;
     batchName?: string;
     expiryDays?: number;
+    layoutType?: FrameLayoutType;
   }): Promise<Voucher[]> {
     await this.initVouchers();
     const count = Math.max(1, Math.min(500, Math.floor(options.count || 1)));
-    const rawPrefix = (options.prefix || 'JCV').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-    const prefix = rawPrefix.slice(0, 6) || 'JCV';
+    const layoutMeta = options.layoutType ? LAYOUT_VOUCHER_META[options.layoutType] : undefined;
+    const defaultPrefix = layoutMeta ? layoutMeta.prefix : 'JCV';
+    const rawPrefix = (options.prefix || defaultPrefix).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const prefix = rawPrefix.slice(0, 6) || defaultPrefix;
     const discountPercent = options.discountPercent ?? 100;
-    const maxUses = options.maxUses ?? 1;
+    const maxUses = options.maxUses ?? 1; // 1 Voucher = 1 Print Copy (Single-Use)
     const expiryDays = options.expiryDays ?? 365;
     const now = Date.now();
     const batchName =
       options.batchName?.trim() ||
-      `Cashier Batch (${new Date(now).toLocaleDateString([], { month: 'short', day: 'numeric' })})`;
+      (layoutMeta
+        ? `${layoutMeta.label} • 1 Print Copy`
+        : `Cashier Batch (${new Date(now).toLocaleDateString([], { month: 'short', day: 'numeric' })})`);
 
     const existingList = await storageService.getAllVouchers();
     const existingCodes = new Set(existingList.map((v) => v.code.toUpperCase()));
@@ -139,6 +193,7 @@ class PaymentService {
           createdAt: now,
           batchName,
           isCashierTicket: true,
+          layoutType: options.layoutType || inferLayoutFromPrefix(prefix),
         });
       }
     }
@@ -182,16 +237,24 @@ class PaymentService {
 
   /**
    * Validate and consume a voucher code (supports exact match, dash-omitted match, and offline signed cashier codes)
+   * Note: 1 Voucher = 1 Print Copy. Once used, a single-use voucher is marked as spent.
    */
   public async redeemVoucher(
     code: string,
-    kioskId: string
-  ): Promise<{ success: boolean; discountPercent: number; message: string; transaction?: PaymentTransaction }> {
+    kioskId: string,
+    expectedLayout?: FrameLayoutType
+  ): Promise<{
+    success: boolean;
+    discountPercent: number;
+    message: string;
+    layoutType?: FrameLayoutType;
+    transaction?: PaymentTransaction;
+  }> {
     await this.initVouchers();
     const cleanCode = code.trim().toUpperCase();
     let voucher = await storageService.getVoucher(cleanCode);
 
-    // If customer typed code without hyphen (e.g. JCV4829K instead of JCV-4829K), find matching stored voucher
+    // If customer typed code without hyphen (e.g. 3S4829K instead of 3S-4829K), find matching stored voucher
     if (!voucher) {
       const strippedInput = cleanCode.replace(/[^A-Z0-9]/g, '');
       const allVouchers = await storageService.getAllVouchers();
@@ -207,47 +270,78 @@ class PaymentService {
     if (!voucher && isValidOfflineSignedCashierCode(cleanCode)) {
       const m = cleanCode.match(/^([A-Z0-9]{2,6})-?([23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{5})$/);
       const canonicalCode = m ? `${m[1]}-${m[2]}` : cleanCode;
+      const inferredLayout = inferLayoutFromPrefix(canonicalCode);
       const existingCanonical = await storageService.getVoucher(canonicalCode);
       if (existingCanonical) {
         voucher = existingCanonical;
       } else {
+        const meta = inferredLayout ? LAYOUT_VOUCHER_META[inferredLayout] : undefined;
         voucher = {
           code: canonicalCode,
           discountPercent: 100,
           maxUses: 1,
           usedCount: 0,
-          description: 'Cashier Paid Session Voucher',
+          description: meta ? `${meta.label} • 1 Print Copy` : 'Cashier Paid Session Voucher',
           expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
           active: true,
           createdAt: Date.now(),
           isCashierTicket: true,
+          layoutType: inferredLayout,
         };
       }
     }
 
     if (!voucher) {
-      return { success: false, discountPercent: 0, message: 'Invalid voucher code. Please check and try again.' };
+      return {
+        success: false,
+        discountPercent: 0,
+        message: 'Invalid voucher code. Please check and try again.',
+      };
     }
 
     if (!voucher.active) {
-      return { success: false, discountPercent: 0, message: 'This voucher has been deactivated.' };
+      return {
+        success: false,
+        discountPercent: 0,
+        message: 'This voucher has been deactivated.',
+      };
     }
 
     if (voucher.expiresAt && Date.now() > voucher.expiresAt) {
-      return { success: false, discountPercent: 0, message: 'This voucher has expired.' };
+      return {
+        success: false,
+        discountPercent: 0,
+        message: 'This voucher has expired.',
+      };
     }
 
     if (voucher.maxUses > 0 && voucher.usedCount >= voucher.maxUses) {
       return {
         success: false,
         discountPercent: 0,
-        message: 'This voucher code has already been used.',
+        message: 'This voucher has already been spent. Please buy a new voucher from the cashier.',
       };
     }
 
-    // Update voucher usage count & timestamp
+    const voucherLayout = voucher.layoutType || inferLayoutFromPrefix(voucher.code);
+
+    // If expectedLayout is specified (e.g., on the "Print Another Copy" screen or layout-specific check), verify match
+    if (expectedLayout && voucherLayout && voucherLayout !== expectedLayout) {
+      const vMeta = LAYOUT_VOUCHER_META[voucherLayout];
+      const eMeta = LAYOUT_VOUCHER_META[expectedLayout];
+      return {
+        success: false,
+        discountPercent: 0,
+        message: `This voucher is for ${vMeta.label}. Please enter a ${eMeta.label} voucher.`,
+      };
+    }
+
+    // Update voucher usage count & timestamp (mark as spent)
     voucher.usedCount += 1;
     voucher.lastUsedAt = Date.now();
+    if (voucherLayout && !voucher.layoutType) {
+      voucher.layoutType = voucherLayout;
+    }
     await storageService.saveVoucher(voucher);
 
     // Record transaction
@@ -259,16 +353,20 @@ class PaymentService {
       status: 'completed',
       timestamp: Date.now(),
       voucherCode: voucher.code,
+      layoutType: voucherLayout,
       kioskId,
     };
 
     await storageService.saveTransaction(tx);
     soundEffects.playSuccessChime();
 
+    const layoutBadge = voucherLayout ? ` (${LAYOUT_VOUCHER_META[voucherLayout].label} • 1 Print Copy)` : ' (1 Print Copy)';
+
     return {
       success: true,
       discountPercent: voucher.discountPercent,
-      message: `Voucher redeemed! ${voucher.description}`,
+      layoutType: voucherLayout,
+      message: `Voucher redeemed!${layoutBadge}`,
       transaction: tx,
     };
   }
