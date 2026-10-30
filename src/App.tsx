@@ -17,11 +17,17 @@ import {
 import { FRAME_THEMES } from './services/frameTemplates';
 import { remoteConfigService } from './services/remoteConfig';
 import { analyticsService } from './services/analytics';
-import { storageService } from './services/storage';
+import { storageService, safeStorageGet } from './services/storage';
 import { soundEffects } from './services/soundEffects';
+import { cameraStreamService } from './services/cameraStreamService';
 
 // Components
-import { KioskNavBar, lockKioskFullscreen, unlockKioskFullscreen } from './components/KioskNavBar';
+import {
+  KioskNavBar,
+  lockKioskFullscreen,
+  unlockKioskFullscreen,
+  enterBrowserFullscreenApi,
+} from './components/KioskNavBar';
 import { AttractScreen } from './components/AttractScreen';
 import { PaymentModal } from './components/PaymentModal';
 import { FrameSelector } from './components/FrameSelector';
@@ -55,8 +61,19 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMobileShareModal, setShowMobileShareModal] = useState(false);
 
-  // Initialize config, telemetry, and check URL for direct mobile guest share (?share=...)
+  // Initialize config, telemetry, persistent camera stream, and check URL for direct mobile guest share (?share=...)
   useEffect(() => {
+    // Eagerly acquire and keep camera stream alive on boot so permission is granted once
+    // before entering fullscreen and never interrupts the kiosk session later.
+    cameraStreamService
+      .getOrStartStream('user')
+      .then(() => {
+        if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+          enterBrowserFullscreenApi();
+        }
+      })
+      .catch(() => {});
+
     remoteConfigService
       .init()
       .then((loadedConfig) => {
@@ -98,6 +115,16 @@ export default function App() {
     if (config.autoFullscreenLock !== false) {
       lockKioskFullscreen(true);
     }
+
+    // Ensure persistent camera stream is active and re-assert fullscreen lock once ready
+    cameraStreamService
+      .getOrStartStream('user')
+      .then(() => {
+        if (config.autoFullscreenLock !== false || safeStorageGet('jcv_fullscreen_locked') === 'true') {
+          enterBrowserFullscreenApi();
+        }
+      })
+      .catch(() => {});
 
     // If free play mode active, skip payment gate straight to frame customization
     if (config.freePlayMode) {
@@ -244,6 +271,10 @@ export default function App() {
             filter={selectedFilter}
             onCapturesComplete={handleCapturesComplete}
             onCancel={() => setCurrentScreen('frame_select')}
+            onSecretAdminTap={() => {
+              unlockKioskFullscreen();
+              setShowAdminModal(true);
+            }}
           />
         )}
 

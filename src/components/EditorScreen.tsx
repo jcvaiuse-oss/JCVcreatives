@@ -97,6 +97,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   const [filter, setFilter] = useState<PhotoFilterType>(initialFilter);
   const [printBrightness, setPrintBrightness] = useState<number>(brightness ?? 45);
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [themePage, setThemePage] = useState<number>(0);
   const [stickers, setStickers] = useState<StickerItem[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string>('');
@@ -292,19 +293,26 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
     }
   };
 
-  const displayedThemes = themeMode === 'thermal'
+  const allMatchingThemes = themeMode === 'thermal'
     ? THERMAL_FRAME_THEMES
     : (activeCategory === 'all'
         ? DIGITAL_COLOR_THEMES
         : DIGITAL_COLOR_THEMES.filter((t) => t.category === activeCategory));
 
+  const ITEMS_PER_PAGE = 6;
+  const totalPages = Math.max(1, Math.ceil(allMatchingThemes.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(themePage, totalPages - 1);
+  const displayedThemes = allMatchingThemes.slice(
+    safePage * ITEMS_PER_PAGE,
+    safePage * ITEMS_PER_PAGE + ITEMS_PER_PAGE
+  );
+
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-4xl mx-auto w-full">
       {/* Top Header */}
-      <div className="flex flex-col items-center text-center mb-1.5 shrink-0">
+      <div className="flex flex-col items-center text-center mb-1 shrink-0">
         <button
           type="button"
-          data-no-fullscreen-enforce="true"
           onClick={() => {
             soundEffects.playTap();
             const next = logoTapCount + 1;
@@ -315,7 +323,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             }
             setLogoTapCount(next);
           }}
-          className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-1 cursor-pointer"
+          className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-0.5 cursor-pointer"
         >
           J
         </button>
@@ -328,11 +336,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
       </div>
 
       {/* Main Layout: Left Photostrip Preview, Right Theme / Template Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-start flex-1 min-h-0 overflow-hidden my-1">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-center flex-1 min-h-0 overflow-hidden my-1">
         {/* Left Column: Photostrip Preview + Mode Toggle */}
-        <div className="md:col-span-6 h-full min-h-0 flex flex-col items-center justify-between overflow-hidden">
+        <div className="md:col-span-5 h-full min-h-0 flex flex-col items-center justify-between overflow-hidden">
           {/* Preview Mode Switcher (Thermal Print vs Digital Color & GIF) */}
-          <div className="flex items-center gap-1 p-0.5 bg-zinc-200/70 rounded-full border border-zinc-300 mb-1.5 shrink-0">
+          <div className="flex items-center gap-1 p-0.5 bg-zinc-200/70 rounded-full border border-zinc-300 mb-1 shrink-0">
             <button
               onClick={() => {
                 soundEffects.playTap();
@@ -424,7 +432,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           </div>
 
           {/* Compact Bottom Controls under Preview */}
-          <div className="mt-1.5 text-center space-y-1 shrink-0">
+          <div className="mt-1 text-center space-y-1 shrink-0">
             <div className="flex items-center justify-center gap-2">
               {photos.map((p, idx) => (
                 <button
@@ -462,8 +470,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Template / Theme Selector Cards */}
-        <div className="md:col-span-6 h-full min-h-0 flex flex-col space-y-1.5 overflow-hidden">
+        {/* Right Column: Template / Theme Selector Cards (Zero-scroll 3x2 grid) */}
+        <div className="md:col-span-7 h-full min-h-0 flex flex-col justify-between space-y-1.5 overflow-hidden">
           {/* High-level Mode Switcher */}
           <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-200/60 rounded-2xl border border-zinc-200 text-xs shrink-0">
             <button
@@ -471,6 +479,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 soundEffects.playTap();
                 setThemeMode('thermal');
                 setPreviewView('thermal');
+                setThemePage(0);
               }}
               className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                 themeMode === 'thermal'
@@ -486,6 +495,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 soundEffects.playTap();
                 setThemeMode('digital');
                 setPreviewView('digital');
+                setThemePage(0);
               }}
               className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                 themeMode === 'digital'
@@ -498,26 +508,54 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </button>
           </div>
 
-          {/* Informational Subtext */}
-          <div className="px-1 text-[10px] text-zinc-500 shrink-0">
-            {themeMode === 'thermal' ? (
-              <span>Pure white receipt paper with crisp black ink frames (no colored fills)</span>
-            ) : (
-              <span>Vibrant pastel and rich color frames for your phone download and motion GIF</span>
+          {/* Informational Subtext + Optional Category Chips */}
+          <div className="flex items-center justify-between gap-2 px-1 shrink-0">
+            <div className="text-[10px] text-zinc-500 truncate">
+              {themeMode === 'thermal'
+                ? 'Pure white receipt paper with crisp black ink frames'
+                : 'Vibrant pastel & rich color frames for phone download & GIF'}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playTap();
+                    setThemePage((p) => (p > 0 ? p - 1 : totalPages - 1));
+                  }}
+                  className="px-2 py-0.5 rounded-full bg-zinc-200/80 hover:bg-zinc-300 text-[10px] font-semibold text-zinc-800 cursor-pointer"
+                >
+                  ‹ Prev
+                </button>
+                <span className="text-[10px] font-mono text-zinc-500">
+                  {safePage + 1}/{totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.playTap();
+                    setThemePage((p) => (p + 1) % totalPages);
+                  }}
+                  className="px-2 py-0.5 rounded-full bg-zinc-200/80 hover:bg-zinc-300 text-[10px] font-semibold text-zinc-800 cursor-pointer"
+                >
+                  Next ›
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Category Chips (shown in digital color mode) */}
+          {/* Category Chips (shown in digital color mode, wrapped so no swipe needed) */}
           {themeMode === 'digital' && (
-            <div data-scrollable="true" className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] shrink-0">
+            <div className="flex flex-wrap items-center gap-1 text-[10px] shrink-0">
               {THEME_GROUPS.map((grp) => (
                 <button
                   key={grp.id}
                   onClick={() => {
                     soundEffects.playTap();
                     setActiveCategory(grp.id);
+                    setThemePage(0);
                   }}
-                  className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition cursor-pointer font-medium ${
+                  className={`px-2 py-0.5 rounded-full whitespace-nowrap transition cursor-pointer font-medium ${
                     activeCategory === grp.id
                       ? 'bg-black text-white shadow-xs'
                       : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
@@ -529,11 +567,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </div>
           )}
 
-          {/* Vertical Template List (Contained scroll area) */}
-          <div
-            data-scrollable="true"
-            className="grid grid-cols-2 gap-2.5 flex-1 min-h-0 max-h-[38vh] sm:max-h-[42vh] overflow-y-auto overscroll-contain pr-1"
-          >
+          {/* Zero-Scroll 3x2 Template Grid (All 6 templates fit simultaneously without vertical scrolling) */}
+          <div className="grid grid-cols-3 gap-2 flex-1 min-h-0 overflow-hidden content-center">
             {displayedThemes.map((t) => {
               const isSelected = themeMode === 'thermal'
                 ? thermalTheme.id === t.id
@@ -552,22 +587,22 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       setPreviewView('digital');
                     }
                   }}
-                  className={`p-2.5 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
+                  className={`p-2 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
                     isSelected
                       ? 'border-black bg-white ring-2 ring-black/10 shadow-sm'
                       : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
                   }`}
                 >
                   <div className="w-full flex items-center justify-between">
-                    <span className="text-[9px] font-mono text-zinc-400 uppercase">
+                    <span className="text-[8px] font-mono text-zinc-400 uppercase">
                       {themeMode === 'thermal' ? 'THERMAL' : 'COLOR'}
                     </span>
                     {isSelected ? (
-                      <div className="w-4 h-4 rounded-full bg-black text-white flex items-center justify-center">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      <div className="w-3.5 h-3.5 rounded-full bg-black text-white flex items-center justify-center">
+                        <Check className="w-2 h-2 stroke-[3]" />
                       </div>
                     ) : (
-                      <div className="w-4 h-4" />
+                      <div className="w-3.5 h-3.5" />
                     )}
                   </div>
 
@@ -576,23 +611,23 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     style={{
                       backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
                     }}
-                    className={`w-14 h-16 rounded-md border my-1 flex flex-col items-center justify-around p-1 shadow-2xs ${
+                    className={`w-11 h-13 rounded-md border my-0.5 flex flex-col items-center justify-around p-1 shadow-2xs ${
                       themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-200'
                     }`}
                   >
-                    <div className="text-[6px] font-mono text-zinc-500 uppercase truncate w-full text-center">
+                    <div className="text-[5.5px] font-mono text-zinc-500 uppercase truncate w-full text-center">
                       {t.name}
                     </div>
                     <div className="grid grid-cols-2 gap-0.5 w-full">
-                      <div className="h-4 bg-zinc-800 rounded-2xs" />
-                      <div className="h-4 bg-zinc-800 rounded-2xs" />
-                      <div className="h-4 bg-zinc-800 rounded-2xs" />
-                      <div className="h-4 bg-zinc-800 rounded-2xs" />
+                      <div className="h-3 bg-zinc-800 rounded-2xs" />
+                      <div className="h-3 bg-zinc-800 rounded-2xs" />
+                      <div className="h-3 bg-zinc-800 rounded-2xs" />
+                      <div className="h-3 bg-zinc-800 rounded-2xs" />
                     </div>
                     <div className="text-[5px] text-zinc-400">|||| |||</div>
                   </div>
 
-                  <div className="font-semibold text-xs text-zinc-900 mt-0.5">
+                  <div className="font-semibold text-[11px] text-zinc-900 leading-tight truncate w-full">
                     {t.name}
                   </div>
                 </button>
@@ -602,9 +637,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
           {/* Stickers Drawer (if opened) */}
           {showStickersDrawer && (
-            <div className="p-2.5 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0">
+            <div className="p-2 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0">
               <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 text-xs">
-                <span className="font-semibold text-zinc-900">Choose Stickers</span>
+                <span className="font-semibold text-zinc-900">Tap a Sticker to Add</span>
                 <button
                   onClick={() => setShowStickersDrawer(false)}
                   className="text-zinc-400 hover:text-zinc-900"
@@ -612,12 +647,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   ✕
                 </button>
               </div>
-              <div data-scrollable="true" className="flex items-center gap-2 overflow-x-auto pb-1 text-xl">
-                {FUN_STICKERS.slice(0, 30).map((emojiStr, i) => (
+              <div className="flex flex-wrap items-center gap-1.5 text-lg">
+                {FUN_STICKERS.slice(0, 18).map((emojiStr, i) => (
                   <button
                     key={i}
                     onClick={() => handleAddSticker(emojiStr)}
-                    className="p-1 hover:scale-125 transition cursor-pointer shrink-0"
+                    className="p-0.5 hover:scale-125 transition cursor-pointer shrink-0"
                   >
                     {emojiStr}
                   </button>

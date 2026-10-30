@@ -439,7 +439,19 @@
 
 /* Optimize touch tablet kiosk interaction & prevent iPadOS WebKit overscroll fullscreen exit */
 html,
-body,
+body {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: auto;
+}
+
 #root {
   height: 100dvh;
   width: 100%;
@@ -447,7 +459,7 @@ body,
   padding: 0;
   overflow: hidden;
   overscroll-behavior: none;
-  -webkit-overflow-scrolling: auto;
+  touch-action: manipulation;
 }
 
 * {

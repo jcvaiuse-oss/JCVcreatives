@@ -1047,7 +1047,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-2 sm:p-6 select-none animate-fadeIn">
+    <div
+      data-admin-scrollable="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-2 sm:p-6 select-none animate-fadeIn"
+    >
       <div className="relative w-full max-w-5xl bg-slate-950 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[94vh]">
         {/* Admin Header */}
         <div className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">

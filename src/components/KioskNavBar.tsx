@@ -200,7 +200,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onRequestAdmin]);
 
-  // Keep Fullscreen Locked on any pointerup/touchend/click if browser dropped native fullscreen
+  // Keep Fullscreen Locked on any touch/pointer/click if browser dropped native fullscreen
   useEffect(() => {
     if (!isMaximizedLocked) return;
 
@@ -230,14 +230,18 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       }
     };
 
-    window.addEventListener('pointerup', handleEnforceFullscreenLock, { capture: true });
+    window.addEventListener('pointerdown', handleEnforceFullscreenLock, { capture: true, passive: true });
+    window.addEventListener('pointerup', handleEnforceFullscreenLock, { capture: true, passive: true });
+    window.addEventListener('touchstart', handleEnforceFullscreenLock, { capture: true, passive: true });
     window.addEventListener('touchend', handleEnforceFullscreenLock, { capture: true, passive: true });
     window.addEventListener('click', handleEnforceFullscreenLock, { capture: true });
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
     return () => {
+      window.removeEventListener('pointerdown', handleEnforceFullscreenLock, { capture: true });
       window.removeEventListener('pointerup', handleEnforceFullscreenLock, { capture: true });
+      window.removeEventListener('touchstart', handleEnforceFullscreenLock, { capture: true });
       window.removeEventListener('touchend', handleEnforceFullscreenLock, { capture: true });
       window.removeEventListener('click', handleEnforceFullscreenLock, { capture: true });
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
@@ -245,12 +249,12 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     };
   }, [isMaximizedLocked, enterBrowserFullscreen]);
 
-  // Global Swipe-Down from Top Edge detector to reveal the hidden top menu + iPadOS WebKit overscroll guard
+  // Global iPadOS WebKit Fullscreen Swipe-Down Blocker (Capture Phase, 0px threshold)
   useEffect(() => {
     if (!isMaximizedLocked) return;
 
-    const SWIPE_TOP_ZONE_PX = 36; // Must start within top 36px edge of screen
-    const SWIPE_THRESHOLD_PX = 28; // Deliberate downward swipe to reveal top bar
+    const SWIPE_TOP_ZONE_PX = 36;
+    const SWIPE_THRESHOLD_PX = 28;
 
     const handleTouchStart = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return;
@@ -267,18 +271,30 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!e.touches || e.touches.length === 0) return;
-      const currentY = e.touches[0].clientY;
-      const currentX = e.touches[0].clientX;
+      const target = e.target as HTMLElement | null;
 
-      // 1. Top-edge swipe down to reveal in-app KioskNavBar
-      if (swipeStartYRef.current !== null) {
-        const deltaY = currentY - swipeStartYRef.current;
-        const deltaX = Math.abs(currentX - (swipeStartXRef.current ?? currentX));
+      // Allow range sliders (e.g. exposure slider) and Admin modal scroll containers to work
+      const isRangeInput =
+        target?.tagName === 'INPUT' && (target as HTMLInputElement).type === 'range';
+      const isAdminScrollable = Boolean(target?.closest('[data-admin-scrollable="true"]'));
 
+      if (!isRangeInput && !isAdminScrollable) {
+        // CRITICAL for iPadOS Chrome / Safari (WKFullScreenWindowController):
+        // Calling e.preventDefault() on the VERY FIRST touchmove event in capture phase
+        // prevents WebKit's native "Swipe down to exit fullscreen" gesture recognizer from firing.
         if (e.cancelable) {
           e.preventDefault();
         }
+      }
+
+      if (!e.touches || e.touches.length === 0) return;
+      const currentY = e.touches[0].clientY;
+      const currentX = e.touches[0].clientX;
+      lastTouchYRef.current = currentY;
+
+      if (swipeStartYRef.current !== null) {
+        const deltaY = currentY - swipeStartYRef.current;
+        const deltaX = Math.abs(currentX - (swipeStartXRef.current ?? currentX));
 
         if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.2) {
           swipeStartYRef.current = null;
@@ -287,30 +303,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         } else if (!isTopMenuHidden && deltaY <= -20) {
           swipeStartYRef.current = null;
           setIsTopMenuHidden(true);
-        }
-        return;
-      }
-
-      // 2. Prevent iPadOS WebKit "Swipe down to exit fullscreen" rubber-band overscroll on page body
-      const target = e.target as HTMLElement | null;
-      const scrollableParent = target?.closest('[data-scrollable="true"]') as HTMLElement | null;
-      const moveDeltaY = currentY - (lastTouchYRef.current ?? currentY);
-      lastTouchYRef.current = currentY;
-
-      if (!scrollableParent) {
-        // Not inside an explicitly scrollable sub-panel (or dragging stickers/inputs): block document rubber-banding
-        const isRangeOrInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT';
-        if (!isRangeOrInput && e.cancelable && Math.abs(moveDeltaY) > 2) {
-          e.preventDefault();
-        }
-      } else {
-        // Inside a scrollable sub-panel: prevent overscrolling past top or bottom edge
-        const atTop = scrollableParent.scrollTop <= 0 && moveDeltaY > 0;
-        const atBottom =
-          scrollableParent.scrollTop + scrollableParent.clientHeight >= scrollableParent.scrollHeight - 1 &&
-          moveDeltaY < 0;
-        if ((atTop || atBottom) && e.cancelable) {
-          e.preventDefault();
         }
       }
     };
@@ -321,7 +313,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       lastTouchYRef.current = null;
     };
 
-    // Also support pointer/mouse drag-down from the top edge for touch-monitors & desktop
     const handlePointerDown = (e: PointerEvent) => {
       if (e.clientY <= SWIPE_TOP_ZONE_PX) {
         swipeStartYRef.current = e.clientY;
@@ -360,17 +351,19 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       swipeStartXRef.current = null;
     };
 
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchmove', handleTouchMove, { passive: false });
-    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+    document.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
     window.addEventListener('pointerdown', handlePointerDown, { passive: true });
     window.addEventListener('pointermove', handlePointerMove, { passive: true });
     window.addEventListener('pointerup', handlePointerUp, { passive: true });
 
     return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
+      document.removeEventListener('touchstart', handleTouchStart, { capture: true });
+      document.removeEventListener('touchmove', handleTouchMove, { capture: true });
+      window.removeEventListener('touchmove', handleTouchMove, { capture: true });
+      document.removeEventListener('touchend', handleTouchEnd, { capture: true });
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
@@ -410,6 +403,10 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         doc.msFullscreenElement
       );
       setIsNativeFullscreen(activeFs);
+      // If fullscreen was exited externally while lock is active, attempt immediate re-entry
+      if (!activeFs && safeStorageGet('jcv_fullscreen_locked') === 'true') {
+        enterBrowserFullscreen();
+      }
     };
     document.addEventListener('fullscreenchange', fsChange);
     document.addEventListener('webkitfullscreenchange', fsChange);
@@ -420,7 +417,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       document.removeEventListener('fullscreenchange', fsChange);
       document.removeEventListener('webkitfullscreenchange', fsChange);
     };
-  }, []);
+  }, [enterBrowserFullscreen]);
 
   const handleInstallApp = async () => {
     soundEffects.playTap();
@@ -457,46 +454,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
 
   return (
     <>
-      {/* Top-Edge Swipe-Down Sensor Strip & Hidden Top-Left Logo Tap Zone when Maximized & Top Menu is Hidden */}
-      {isMaximizedLocked && isTopMenuHidden && (
-        <>
-          {/* Invisible Top-Left Logo Tap Zone so spamming top-left corner 4x works even while top menu is hidden */}
-          <button
-            type="button"
-            data-no-fullscreen-enforce="true"
-            onClick={handleLogoSecretTap}
-            className="fixed top-0 left-0 w-44 h-11 z-50 bg-transparent border-0 cursor-pointer focus:outline-none"
-            title="Tap 4 times for Admin"
-            aria-label="Admin Secret Tap Area"
-          />
-          <div
-            onTouchStart={(e) => {
-              if (e.touches && e.touches[0]) {
-                swipeStartYRef.current = e.touches[0].clientY;
-                swipeStartXRef.current = e.touches[0].clientX;
-              }
-            }}
-            onTouchMove={(e) => {
-              if (
-                swipeStartYRef.current !== null &&
-                e.touches &&
-                e.touches[0] &&
-                e.touches[0].clientY - swipeStartYRef.current >= 24
-              ) {
-                swipeStartYRef.current = null;
-                setIsTopMenuHidden(false);
-                soundEffects.playTap();
-              }
-            }}
-            className="fixed top-0 inset-x-0 h-5 z-40 flex justify-center items-start pointer-events-auto touch-none"
-            title="Swipe down from top to show menu"
-          >
-            {/* Subtle pill indicator at top center so operator knows where to swipe down */}
-            <div className="w-12 h-1 mt-1 rounded-full bg-black/15" />
-          </div>
-        </>
-      )}
-
       {/* Top Menu Header: Normal in-flow when unlocked; slides down as overlay when swiped down in Maximized Lock mode */}
       <header
         ref={headerRef}

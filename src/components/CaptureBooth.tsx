@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Camera,
   FlipHorizontal,
-  X,
   Zap,
   ZapOff,
   Sun,
@@ -17,19 +16,23 @@ import {
 } from 'lucide-react';
 import { FrameLayoutType, PhotoFilterType } from '../types';
 import { soundEffects } from '../services/soundEffects';
+import { cameraStreamService } from '../services/cameraStreamService';
+import { safeStorageGet } from '../services/storage';
+import { enterBrowserFullscreenApi } from './KioskNavBar';
 
 interface CaptureBoothProps {
   layout: FrameLayoutType;
   filter: PhotoFilterType;
   onCapturesComplete: (photos: string[]) => void;
   onCancel: () => void;
+  onSecretAdminTap?: () => void;
 }
 
 export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   layout,
   filter,
   onCapturesComplete,
-  onCancel,
+  onSecretAdminTap,
 }) => {
   const targetShotCount =
     layout === 'single_polaroid' ? 1 : layout === 'grid_4' ? 2 : layout === 'strip_3' ? 3 : 4;
@@ -40,61 +43,59 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   const [isFlashing, setIsFlashing] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(() =>
+    cameraStreamService.hasLiveStream('user')
+  );
   const [brightness, setBrightness] = useState<number>(100);
   const [flashEnabled, setFlashEnabled] = useState(true);
   const [timerDuration, setTimerDuration] = useState<3 | 5 | 10>(3);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
+  const [logoTapCount, setLogoTapCount] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Initialize camera
+  useEffect(() => {
+    if (logoTapCount === 0) return;
+    const t = setTimeout(() => setLogoTapCount(0), 2500);
+    return () => clearTimeout(t);
+  }, [logoTapCount]);
+
+  // Attach persistent camera stream (never stops tracks on unmount so permission stays alive)
   useEffect(() => {
     let isMounted = true;
 
-    async function startCamera() {
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
-
+    async function attachPersistentCamera() {
       try {
-        const getMedia =
-          navigator?.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices) ||
-          ((constraints: MediaStreamConstraints) =>
-            new Promise<MediaStream>((resolve, reject) => {
-              const legacyGetUserMedia =
-                (navigator as any)?.getUserMedia ||
-                (navigator as any)?.webkitGetUserMedia ||
-                (navigator as any)?.mozGetUserMedia;
-              if (legacyGetUserMedia) {
-                legacyGetUserMedia.call(navigator, constraints, resolve, reject);
-              } else {
-                reject(new Error('Camera API not available'));
-              }
-            }));
-
-        const stream = await getMedia({
-          video: {
-            facingMode,
-            width: { ideal: 1280 },
-            height: { ideal: 960 },
-          },
-          audio: false,
-        });
-
-        if (!isMounted) {
-          stream.getTracks().forEach((track) => track.stop());
+        // 1. Check if stream is already live in memory for instant 0ms attachment
+        const cached = cameraStreamService.getCachedStream(facingMode);
+        if (cached && videoRef.current) {
+          videoRef.current.srcObject = cached;
+          videoRef.current.play().catch(() => {});
+          setIsCameraActive(true);
+          setCameraError(null);
           return;
         }
 
-        mediaStreamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+        // 2. Otherwise acquire/reuse from cameraStreamService
+        const stream = await cameraStreamService.getOrStartStream(facingMode);
+        if (!isMounted) return;
+
+        // Re-assert fullscreen lock immediately after camera permission resolves
+        if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+          enterBrowserFullscreenApi();
         }
-        setIsCameraActive(true);
-        setCameraError(null);
+
+        if (stream) {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(() => {});
+          }
+          setIsCameraActive(true);
+          setCameraError(null);
+        } else {
+          setIsCameraActive(false);
+          setCameraError('Camera access unavailable. Using studio simulation.');
+        }
       } catch {
         if (!isMounted) return;
         setIsCameraActive(false);
@@ -102,13 +103,11 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
       }
     }
 
-    startCamera();
+    attachPersistentCamera();
 
     return () => {
       isMounted = false;
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      // Intentionally DO NOT stop camera tracks on unmount so permission & stream stay active
     };
   }, [facingMode]);
 
@@ -121,6 +120,9 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   // Start Countdown Sequence
   const startCountdown = () => {
     if (countdown !== null) return;
+    if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+      enterBrowserFullscreenApi();
+    }
     soundEffects.playCountdownBeep(false);
     setCountdown(timerDuration);
   };
@@ -235,27 +237,34 @@ export const CaptureBooth: React.FC<CaptureBoothProps> = ({
   };
 
   return (
-    <div className="relative flex-1 flex flex-col items-center justify-between p-4 sm:p-6 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-lg mx-auto w-full">
+    <div className="relative flex-1 h-full min-h-0 flex flex-col items-center justify-between p-3 sm:p-5 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-lg mx-auto w-full">
       {/* Flash effect overlay */}
       {isFlashing && (
         <div className="fixed inset-0 bg-white z-50 pointer-events-none transition-opacity duration-200" />
       )}
 
-      {/* Top Header matching Still 643ff2f4.jpeg */}
-      <div className="w-full flex items-center justify-between pb-2">
-        <button
-          onClick={() => {
-            soundEffects.playTap();
-            onCancel();
-          }}
-          className="p-2 rounded-full hover:bg-zinc-200/80 text-zinc-600 transition cursor-pointer"
-          title="Exit to Layout"
-        >
-          <X className="w-5 h-5" />
-        </button>
+      {/* Top Header (Left X button removed; center brand badge + shot counter; right camera flip) */}
+      <div className="w-full flex items-center justify-between pb-1.5 shrink-0">
+        <div className="w-9" />
 
-        <div className="text-center">
-          <h1 className="text-base sm:text-lg font-bold text-zinc-950">
+        <div className="flex flex-col items-center text-center">
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.playTap();
+              const next = logoTapCount + 1;
+              if (next >= 4) {
+                setLogoTapCount(0);
+                onSecretAdminTap?.();
+                return;
+              }
+              setLogoTapCount(next);
+            }}
+            className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-0.5 cursor-pointer"
+          >
+            J
+          </button>
+          <h1 className="text-base sm:text-lg font-bold text-zinc-950 leading-tight">
             Photo {Math.min(currentShotIndex + 1, targetShotCount)} of {targetShotCount}
           </h1>
           <p className="text-xs text-zinc-500">

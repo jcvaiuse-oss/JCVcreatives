@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { FrameLayoutType, FrameTheme, PhotoFilterType } from '../types';
 import { soundEffects } from '../services/soundEffects';
+import { cameraStreamService } from '../services/cameraStreamService';
+import { safeStorageGet } from '../services/storage';
+import { enterBrowserFullscreenApi } from './KioskNavBar';
 
 interface FrameSelectorProps {
   selectedLayout: FrameLayoutType;
@@ -124,11 +127,12 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
   onBack,
   onSecretAdminTap,
 }) => {
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [facingMode] = useState<'user' | 'environment'>('user');
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(() =>
+    cameraStreamService.getCachedStream('user')
+  );
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [logoTapCount, setLogoTapCount] = useState(0);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (logoTapCount === 0) return;
@@ -136,77 +140,46 @@ export const FrameSelector: React.FC<FrameSelectorProps> = ({
     return () => clearTimeout(t);
   }, [logoTapCount]);
 
-  // Only start mini preview camera if permission is ALREADY granted, so iPadOS doesn't pop up
-  // a native OS permission alert on screen transition (which forces WebKit out of Fullscreen)
+  // Attach persistent camera stream (keeps stream alive across screens without stopping tracks)
   useEffect(() => {
     let isMounted = true;
 
-    async function startCameraIfPermitted() {
-      try {
-        if (navigator.permissions && typeof navigator.permissions.query === 'function') {
-          const perm = await navigator.permissions.query({ name: 'camera' as PermissionName });
-          if (perm.state !== 'granted') {
-            return; // Wait until CaptureBooth so we don't interrupt fullscreen transition
-          }
-        } else {
-          // On browsers without permissions.query for camera (some WebKit versions), check enumerateDevices
-          const devices = await navigator.mediaDevices?.enumerateDevices?.();
-          const hasAuthorizedVideo = devices?.some((d) => d.kind === 'videoinput' && Boolean(d.label));
-          if (!hasAuthorizedVideo) {
-            return;
-          }
-        }
-
-        if (mediaStreamRef.current) {
-          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode,
-            width: { ideal: 640 },
-            height: { ideal: 360 },
-          },
-          audio: false,
-        });
-
-        if (!isMounted) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        mediaStreamRef.current = stream;
-        setCameraStream(stream);
-      } catch {
-        // Camera fallback handled by MiniLiveVideo
-      }
+    const cached = cameraStreamService.getCachedStream(facingMode);
+    if (cached) {
+      setCameraStream(cached);
+      return;
     }
 
-    startCameraIfPermitted();
+    cameraStreamService
+      .getOrStartStream(facingMode)
+      .then((stream) => {
+        if (!isMounted) return;
+        if (stream) {
+          setCameraStream(stream);
+        }
+        if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+          enterBrowserFullscreenApi();
+        }
+      })
+      .catch(() => {});
 
     return () => {
       isMounted = false;
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-      }
     };
   }, [facingMode]);
 
   const handleContinue = () => {
     soundEffects.playTap();
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
+    if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+      enterBrowserFullscreenApi();
     }
     onContinue();
   };
 
   const handleBack = () => {
     soundEffects.playTap();
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
+    if (safeStorageGet('jcv_fullscreen_locked') === 'true') {
+      enterBrowserFullscreenApi();
     }
     onBack();
   };
