@@ -41,7 +41,19 @@ export function enterBrowserFullscreenApi(): void {
     );
     if (!isFs) {
       if (typeof docEl?.requestFullscreen === 'function') {
-        docEl.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+        docEl.requestFullscreen({ navigationUI: 'hide' }).catch(() => {
+          try {
+            docEl.requestFullscreen().catch(() => {
+              if (typeof docEl?.webkitRequestFullscreen === 'function') {
+                docEl.webkitRequestFullscreen();
+              }
+            });
+          } catch {
+            if (typeof docEl?.webkitRequestFullscreen === 'function') {
+              docEl.webkitRequestFullscreen();
+            }
+          }
+        });
       } else if (typeof docEl?.webkitRequestFullscreen === 'function') {
         docEl.webkitRequestFullscreen();
       } else if (typeof docEl?.webkitRequestFullScreen === 'function') {
@@ -137,6 +149,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
 
   const swipeStartYRef = useRef<number | null>(null);
   const swipeStartXRef = useRef<number | null>(null);
+  const lastTouchYRef = useRef<number | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
 
   const enterBrowserFullscreen = useCallback(() => {
@@ -160,12 +173,13 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     return () => window.removeEventListener('jcv_fullscreen_lock_changed', handleExternalLockChange);
   }, []);
 
-  // Keep top menu hidden when navigating to another screen/tab while Maximized Lock is active
+  // Keep top menu hidden & re-assert fullscreen lock when navigating to another screen/tab while Maximized Lock is active
   useEffect(() => {
     if (isMaximizedLocked) {
       setIsTopMenuHidden(true);
+      enterBrowserFullscreen();
     }
-  }, [currentScreen, isMaximizedLocked]);
+  }, [currentScreen, isMaximizedLocked, enterBrowserFullscreen]);
 
   useEffect(() => {
     if (secretTapCount === 0) return;
@@ -186,7 +200,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onRequestAdmin]);
 
-  // Keep Fullscreen Locked on any click/tap if browser dropped native fullscreen (e.g. after switching tabs)
+  // Keep Fullscreen Locked on any pointerup/touchend/click if browser dropped native fullscreen
   useEffect(() => {
     if (!isMaximizedLocked) return;
 
@@ -216,30 +230,33 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
       }
     };
 
-    window.addEventListener('click', handleEnforceFullscreenLock, { capture: true });
+    window.addEventListener('pointerup', handleEnforceFullscreenLock, { capture: true });
     window.addEventListener('touchend', handleEnforceFullscreenLock, { capture: true, passive: true });
+    window.addEventListener('click', handleEnforceFullscreenLock, { capture: true });
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
     return () => {
-      window.removeEventListener('click', handleEnforceFullscreenLock, { capture: true });
+      window.removeEventListener('pointerup', handleEnforceFullscreenLock, { capture: true });
       window.removeEventListener('touchend', handleEnforceFullscreenLock, { capture: true });
+      window.removeEventListener('click', handleEnforceFullscreenLock, { capture: true });
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, [isMaximizedLocked, enterBrowserFullscreen]);
 
-  // Global Swipe-Down from Top Edge detector to reveal the hidden top menu (and Swipe-Up to hide it again)
+  // Global Swipe-Down from Top Edge detector to reveal the hidden top menu + iPadOS WebKit overscroll guard
   useEffect(() => {
     if (!isMaximizedLocked) return;
 
     const SWIPE_TOP_ZONE_PX = 36; // Must start within top 36px edge of screen
-    const SWIPE_THRESHOLD_PX = 36; // Deliberate downward swipe to reveal top bar
+    const SWIPE_THRESHOLD_PX = 28; // Deliberate downward swipe to reveal top bar
 
     const handleTouchStart = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return;
       const y = e.touches[0].clientY;
       const x = e.touches[0].clientX;
+      lastTouchYRef.current = y;
       if (y <= SWIPE_TOP_ZONE_PX) {
         swipeStartYRef.current = y;
         swipeStartXRef.current = x;
@@ -250,28 +267,58 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (swipeStartYRef.current === null || !e.touches || e.touches.length === 0) return;
+      if (!e.touches || e.touches.length === 0) return;
       const currentY = e.touches[0].clientY;
       const currentX = e.touches[0].clientX;
-      const deltaY = currentY - swipeStartYRef.current;
-      const deltaX = Math.abs(currentX - (swipeStartXRef.current ?? currentX));
 
-      // Downward swipe from top edge -> Reveal top menu
-      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.5) {
-        swipeStartYRef.current = null;
-        setIsTopMenuHidden(false);
-        soundEffects.playTap();
+      // 1. Top-edge swipe down to reveal in-app KioskNavBar
+      if (swipeStartYRef.current !== null) {
+        const deltaY = currentY - swipeStartYRef.current;
+        const deltaX = Math.abs(currentX - (swipeStartXRef.current ?? currentX));
+
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+
+        if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.2) {
+          swipeStartYRef.current = null;
+          setIsTopMenuHidden(false);
+          soundEffects.playTap();
+        } else if (!isTopMenuHidden && deltaY <= -20) {
+          swipeStartYRef.current = null;
+          setIsTopMenuHidden(true);
+        }
+        return;
       }
-      // Upward swipe on the revealed top menu -> Hide top menu again
-      else if (!isTopMenuHidden && deltaY <= -20) {
-        swipeStartYRef.current = null;
-        setIsTopMenuHidden(true);
+
+      // 2. Prevent iPadOS WebKit "Swipe down to exit fullscreen" rubber-band overscroll on page body
+      const target = e.target as HTMLElement | null;
+      const scrollableParent = target?.closest('[data-scrollable="true"]') as HTMLElement | null;
+      const moveDeltaY = currentY - (lastTouchYRef.current ?? currentY);
+      lastTouchYRef.current = currentY;
+
+      if (!scrollableParent) {
+        // Not inside an explicitly scrollable sub-panel (or dragging stickers/inputs): block document rubber-banding
+        const isRangeOrInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT';
+        if (!isRangeOrInput && e.cancelable && Math.abs(moveDeltaY) > 2) {
+          e.preventDefault();
+        }
+      } else {
+        // Inside a scrollable sub-panel: prevent overscrolling past top or bottom edge
+        const atTop = scrollableParent.scrollTop <= 0 && moveDeltaY > 0;
+        const atBottom =
+          scrollableParent.scrollTop + scrollableParent.clientHeight >= scrollableParent.scrollHeight - 1 &&
+          moveDeltaY < 0;
+        if ((atTop || atBottom) && e.cancelable) {
+          e.preventDefault();
+        }
       }
     };
 
     const handleTouchEnd = () => {
       swipeStartYRef.current = null;
       swipeStartXRef.current = null;
+      lastTouchYRef.current = null;
     };
 
     // Also support pointer/mouse drag-down from the top edge for touch-monitors & desktop
@@ -281,7 +328,6 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
         swipeStartXRef.current = e.clientX;
       } else {
         swipeStartYRef.current = null;
-        // If menu is revealed while locked and user taps outside the top bar, auto-hide the bar
         if (
           !isTopMenuHidden &&
           headerRef.current &&
@@ -295,12 +341,11 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
 
     const handlePointerMove = (e: PointerEvent) => {
       if (swipeStartYRef.current === null) return;
-      // Require primary button pressed for mouse, or any touch/pen contact
       if (e.pointerType === 'mouse' && e.buttons === 0) return;
       const deltaY = e.clientY - swipeStartYRef.current;
       const deltaX = Math.abs(e.clientX - (swipeStartXRef.current ?? e.clientX));
 
-      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.5) {
+      if (isTopMenuHidden && deltaY >= SWIPE_THRESHOLD_PX && deltaY > deltaX * 1.2) {
         swipeStartYRef.current = null;
         setIsTopMenuHidden(false);
         soundEffects.playTap();
@@ -316,7 +361,7 @@ export const KioskNavBar: React.FC<KioskNavBarProps> = ({
     };
 
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
     window.addEventListener('pointerdown', handlePointerDown, { passive: true });
     window.addEventListener('pointermove', handlePointerMove, { passive: true });

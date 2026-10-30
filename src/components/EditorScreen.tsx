@@ -56,6 +56,7 @@ interface EditorScreenProps {
   onChangeBrightness?: (brightness: number) => void;
   onFinalized: (result: PhotostripResult, canvas: HTMLCanvasElement) => void;
   onRetake: () => void;
+  onSecretAdminTap?: () => void;
 }
 
 export const EditorScreen: React.FC<EditorScreenProps> = ({
@@ -69,8 +70,16 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
   onChangeBrightness,
   onFinalized,
   onRetake,
+  onSecretAdminTap,
 }) => {
-  const [currentLayout, setCurrentLayout] = useState<FrameLayoutType>(layout);
+  const [currentLayout] = useState<FrameLayoutType>(layout);
+  const [logoTapCount, setLogoTapCount] = useState(0);
+
+  useEffect(() => {
+    if (logoTapCount === 0) return;
+    const t = setTimeout(() => setLogoTapCount(0), 2500);
+    return () => clearTimeout(t);
+  }, [logoTapCount]);
 
   // Separate thermal receipt theme vs digital color keepsake theme
   const [thermalTheme, setThermalTheme] = useState<FrameTheme>(() => {
@@ -290,38 +299,52 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         : DIGITAL_COLOR_THEMES.filter((t) => t.category === activeCategory));
 
   return (
-    <div className="flex-1 flex flex-col p-4 sm:p-6 bg-[#faf8f5] text-zinc-900 select-none overflow-y-auto max-w-4xl mx-auto w-full">
+    <div className="flex-1 h-full min-h-0 flex flex-col justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-4xl mx-auto w-full">
       {/* Top Header */}
-      <div className="flex flex-col items-center text-center mb-3">
-        <div className="w-7 h-7 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-1.5">
+      <div className="flex flex-col items-center text-center mb-1.5 shrink-0">
+        <button
+          type="button"
+          data-no-fullscreen-enforce="true"
+          onClick={() => {
+            soundEffects.playTap();
+            const next = logoTapCount + 1;
+            if (next >= 4) {
+              setLogoTapCount(0);
+              onSecretAdminTap?.();
+              return;
+            }
+            setLogoTapCount(next);
+          }}
+          className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-1 cursor-pointer"
+        >
           J
-        </div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
+        </button>
+        <h1 className="text-lg sm:text-xl font-bold tracking-tight text-zinc-950 leading-tight">
           Looking great!
         </h1>
-        <p className="text-xs sm:text-sm text-zinc-500">
+        <p className="text-[11px] sm:text-xs text-zinc-500">
           Pick your frame style, then print
         </p>
       </div>
 
       {/* Main Layout: Left Photostrip Preview, Right Theme / Template Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start flex-1 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-start flex-1 min-h-0 overflow-hidden my-1">
         {/* Left Column: Photostrip Preview + Mode Toggle */}
-        <div className="md:col-span-6 flex flex-col items-center">
+        <div className="md:col-span-6 h-full min-h-0 flex flex-col items-center justify-between overflow-hidden">
           {/* Preview Mode Switcher (Thermal Print vs Digital Color & GIF) */}
-          <div className="flex items-center gap-1 p-1 bg-zinc-200/70 rounded-full border border-zinc-300 mb-2.5">
+          <div className="flex items-center gap-1 p-0.5 bg-zinc-200/70 rounded-full border border-zinc-300 mb-1.5 shrink-0">
             <button
               onClick={() => {
                 soundEffects.playTap();
                 setPreviewView('thermal');
               }}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
                 previewView === 'thermal'
                   ? 'bg-black text-white shadow-xs'
                   : 'text-zinc-700 hover:text-black'
               }`}
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Printer className="w-3 h-3" />
               <span>🖨️ Thermal Print</span>
             </button>
             <button
@@ -329,13 +352,13 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 soundEffects.playTap();
                 setPreviewView('digital');
               }}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
                 previewView === 'digital'
                   ? 'bg-sky-400 text-slate-950 font-bold shadow-xs'
                   : 'text-zinc-700 hover:text-black'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="w-3 h-3" />
               <span>📱 Digital Color & GIF</span>
             </button>
           </div>
@@ -344,16 +367,16 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           <div
             ref={stripContainerRef}
             onClick={() => setSelectedStickerId(null)}
-            className="relative rounded-2xl shadow-md overflow-hidden max-h-[48vh] sm:max-h-[52vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1"
+            className="relative rounded-2xl shadow-md overflow-hidden max-h-[34vh] sm:max-h-[38vh] flex items-center justify-center bg-white border border-zinc-200 select-none p-1 shrink-0"
           >
             {previewSrc ? (
               <img
                 src={previewSrc}
                 alt="Photostrip Preview"
-                className="max-h-[46vh] sm:max-h-[50vh] w-auto object-contain rounded-xl select-none pointer-events-none"
+                className="max-h-[32vh] sm:max-h-[36vh] w-auto object-contain rounded-xl select-none pointer-events-none"
               />
             ) : (
-              <div className="w-56 h-80 flex items-center justify-center text-zinc-400 font-mono text-xs">
+              <div className="w-44 h-60 flex items-center justify-center text-zinc-400 font-mono text-xs">
                 Rendering...
               </div>
             )}
@@ -400,27 +423,9 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </div>
           </div>
 
-          {/* Thermal vs Digital Note */}
-          <div className="text-[11px] text-zinc-500 bg-white border border-zinc-200 rounded-xl px-3 py-1 text-center max-w-xs mt-2 shadow-2xs">
-            {previewView === 'thermal' ? (
-              <span>🖨️ Thermal printer produces clean monochrome receipts without dark color fills</span>
-            ) : (
-              <span>📱 Full color frame & motion GIF are saved when scanning QR or sending by email</span>
-            )}
-          </div>
-
-          {/* Subtitle helper */}
-          <div className="mt-2 text-center space-y-1">
-            <p className="text-[11px] text-zinc-400 font-serif italic">
-              Drag, pinch or twist a photo in the frame to fit it
-            </p>
-            <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-600">
-              <span>Tap a photo to retake it</span>
-              <span className="text-[11px] text-zinc-400 font-mono">({retakesLeft} left)</span>
-            </div>
-
-            {/* Captured Photos Thumbnail Row */}
-            <div className="flex items-center justify-center gap-2 pt-1">
+          {/* Compact Bottom Controls under Preview */}
+          <div className="mt-1.5 text-center space-y-1 shrink-0">
+            <div className="flex items-center justify-center gap-2">
               {photos.map((p, idx) => (
                 <button
                   key={idx}
@@ -429,46 +434,45 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     setSelectedPhotoIndex(idx);
                     setShowReviewModal(true);
                   }}
-                  className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-200 hover:border-black transition active:scale-95 shadow-2xs cursor-pointer"
-                  title={`View Shot #${idx + 1}`}
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg overflow-hidden border border-zinc-200 hover:border-black transition active:scale-95 shadow-2xs cursor-pointer"
+                  title={`Tap to retake Shot #${idx + 1} (${retakesLeft} left)`}
                 >
                   <img src={p} alt={`Shot ${idx + 1}`} className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>
 
-            {/* Action pill: Add stickers & more */}
-            <div className="pt-1.5 flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2 pt-0.5">
               <button
                 onClick={() => setShowStickersDrawer((s) => !s)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-xs font-medium transition cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition cursor-pointer shadow-2xs"
               >
-                <Smile className="w-3.5 h-3.5" />
-                <span>Add stickers & more</span>
+                <Smile className="w-3 h-3" />
+                <span>Add stickers</span>
               </button>
 
               <button
                 onClick={() => setShowReviewModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-xs font-medium transition cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-medium transition cursor-pointer shadow-2xs"
               >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>Filters & Retake</span>
+                <Sliders className="w-3 h-3" />
+                <span>Filters & Retake ({retakesLeft})</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* Right Column: Template / Theme Selector Cards */}
-        <div className="md:col-span-6 flex flex-col space-y-2.5">
-          {/* High-level Mode Switcher: Thermal Print Frames (No Color Frame) vs Digital & GIF Colors */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-zinc-200/60 rounded-2xl border border-zinc-200 text-xs">
+        <div className="md:col-span-6 h-full min-h-0 flex flex-col space-y-1.5 overflow-hidden">
+          {/* High-level Mode Switcher */}
+          <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-200/60 rounded-2xl border border-zinc-200 text-xs shrink-0">
             <button
               onClick={() => {
                 soundEffects.playTap();
                 setThemeMode('thermal');
                 setPreviewView('thermal');
               }}
-              className={`py-2 px-2.5 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                 themeMode === 'thermal'
                   ? 'bg-white text-zinc-950 font-bold shadow-xs border border-zinc-200'
                   : 'text-zinc-600 hover:text-zinc-900'
@@ -483,7 +487,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                 setThemeMode('digital');
                 setPreviewView('digital');
               }}
-              className={`py-2 px-2.5 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 px-2 rounded-xl font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5 ${
                 themeMode === 'digital'
                   ? 'bg-white text-zinc-950 font-bold shadow-xs border border-zinc-200'
                   : 'text-zinc-600 hover:text-zinc-900'
@@ -495,7 +499,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
           </div>
 
           {/* Informational Subtext */}
-          <div className="px-1 text-[11px] text-zinc-500">
+          <div className="px-1 text-[10px] text-zinc-500 shrink-0">
             {themeMode === 'thermal' ? (
               <span>Pure white receipt paper with crisp black ink frames (no colored fills)</span>
             ) : (
@@ -505,7 +509,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
           {/* Category Chips (shown in digital color mode) */}
           {themeMode === 'digital' && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <div data-scrollable="true" className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] shrink-0">
               {THEME_GROUPS.map((grp) => (
                 <button
                   key={grp.id}
@@ -513,7 +517,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     soundEffects.playTap();
                     setActiveCategory(grp.id);
                   }}
-                  className={`px-3 py-1 rounded-full whitespace-nowrap transition cursor-pointer font-medium ${
+                  className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition cursor-pointer font-medium ${
                     activeCategory === grp.id
                       ? 'bg-black text-white shadow-xs'
                       : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
@@ -525,8 +529,11 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
             </div>
           )}
 
-          {/* Vertical Template List */}
-          <div className="grid grid-cols-2 gap-3 max-h-[48vh] overflow-y-auto pr-1">
+          {/* Vertical Template List (Contained scroll area) */}
+          <div
+            data-scrollable="true"
+            className="grid grid-cols-2 gap-2.5 flex-1 min-h-0 max-h-[38vh] sm:max-h-[42vh] overflow-y-auto overscroll-contain pr-1"
+          >
             {displayedThemes.map((t) => {
               const isSelected = themeMode === 'thermal'
                 ? thermalTheme.id === t.id
@@ -545,14 +552,14 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       setPreviewView('digital');
                     }
                   }}
-                  className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
+                  className={`p-2.5 rounded-2xl border text-center flex flex-col items-center justify-between transition cursor-pointer ${
                     isSelected
                       ? 'border-black bg-white ring-2 ring-black/10 shadow-sm'
                       : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
                   }`}
                 >
                   <div className="w-full flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-zinc-400 uppercase">
+                    <span className="text-[9px] font-mono text-zinc-400 uppercase">
                       {themeMode === 'thermal' ? 'THERMAL' : 'COLOR'}
                     </span>
                     {isSelected ? (
@@ -569,7 +576,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                     style={{
                       backgroundColor: themeMode === 'thermal' ? '#ffffff' : t.background,
                     }}
-                    className={`w-16 h-20 rounded-md border my-1.5 flex flex-col items-center justify-around p-1 shadow-2xs ${
+                    className={`w-14 h-16 rounded-md border my-1 flex flex-col items-center justify-around p-1 shadow-2xs ${
                       themeMode === 'thermal' ? 'border-zinc-300' : 'border-zinc-200'
                     }`}
                   >
@@ -577,15 +584,15 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                       {t.name}
                     </div>
                     <div className="grid grid-cols-2 gap-0.5 w-full">
-                      <div className="h-5 bg-zinc-800 rounded-2xs" />
-                      <div className="h-5 bg-zinc-800 rounded-2xs" />
-                      <div className="h-5 bg-zinc-800 rounded-2xs" />
-                      <div className="h-5 bg-zinc-800 rounded-2xs" />
+                      <div className="h-4 bg-zinc-800 rounded-2xs" />
+                      <div className="h-4 bg-zinc-800 rounded-2xs" />
+                      <div className="h-4 bg-zinc-800 rounded-2xs" />
+                      <div className="h-4 bg-zinc-800 rounded-2xs" />
                     </div>
                     <div className="text-[5px] text-zinc-400">|||| |||</div>
                   </div>
 
-                  <div className="font-semibold text-xs text-zinc-900 mt-1">
+                  <div className="font-semibold text-xs text-zinc-900 mt-0.5">
                     {t.name}
                   </div>
                 </button>
@@ -595,8 +602,8 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
           {/* Stickers Drawer (if opened) */}
           {showStickersDrawer && (
-            <div className="p-3 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn">
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-100 text-xs">
+            <div className="p-2.5 bg-white rounded-2xl border border-zinc-200 shadow-sm animate-fadeIn shrink-0">
+              <div className="flex items-center justify-between pb-1 mb-1 border-b border-zinc-100 text-xs">
                 <span className="font-semibold text-zinc-900">Choose Stickers</span>
                 <button
                   onClick={() => setShowStickersDrawer(false)}
@@ -605,7 +612,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
                   ✕
                 </button>
               </div>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-2xl">
+              <div data-scrollable="true" className="flex items-center gap-2 overflow-x-auto pb-1 text-xl">
                 {FUN_STICKERS.slice(0, 30).map((emojiStr, i) => (
                   <button
                     key={i}
@@ -621,12 +628,12 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
         </div>
       </div>
 
-      {/* Primary Pill Button: Print my photos */}
-      <div className="mt-auto pt-2 flex flex-col items-center max-w-md mx-auto w-full space-y-2.5">
+      {/* Primary Pill Button: Print my photos (Always visible at bottom without scrolling) */}
+      <div className="pt-1 flex flex-col items-center max-w-md mx-auto w-full space-y-1.5 shrink-0">
         <button
           disabled={isRendering}
           onClick={handleFinalizePrint}
-          className="w-full py-4 rounded-full bg-black hover:bg-zinc-800 disabled:opacity-60 text-white font-medium text-sm sm:text-base tracking-wide shadow-md active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-3.5 rounded-full bg-black hover:bg-zinc-800 disabled:opacity-60 text-white font-medium text-sm sm:text-base tracking-wide shadow-md active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
         >
           <Printer className="w-4 h-4 text-white" />
           <span>
@@ -636,7 +643,7 @@ export const EditorScreen: React.FC<EditorScreenProps> = ({
 
         <button
           onClick={() => setShowRetakeConfirm(true)}
-          className="text-xs text-zinc-400 hover:text-zinc-700 transition"
+          className="text-[11px] text-zinc-400 hover:text-zinc-700 transition cursor-pointer"
         >
           Start the shots over
         </button>

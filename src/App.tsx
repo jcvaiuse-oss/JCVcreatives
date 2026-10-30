@@ -230,6 +230,10 @@ export default function App() {
             voucherCode={activePayment?.voucherCode}
             onContinue={() => setCurrentScreen('capture')}
             onBack={handleResetToAttract}
+            onSecretAdminTap={() => {
+              unlockKioskFullscreen();
+              setShowAdminModal(true);
+            }}
           />
         )}
 
@@ -256,6 +260,10 @@ export default function App() {
             onChangeBrightness={setSelectedBrightness}
             onFinalized={handlePhotostripFinalized}
             onRetake={handleRetakeFromEditor}
+            onSecretAdminTap={() => {
+              unlockKioskFullscreen();
+              setShowAdminModal(true);
+            }}
           />
         )}
 
@@ -268,6 +276,10 @@ export default function App() {
             copies={selectedCopies}
             onDone={handleResetToAttract}
             onOpenMobileShareModal={() => setShowMobileShareModal(true)}
+            onSecretAdminTap={() => {
+              unlockKioskFullscreen();
+              setShowAdminModal(true);
+            }}
           />
         )}
       </main>

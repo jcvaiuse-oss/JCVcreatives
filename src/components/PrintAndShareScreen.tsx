@@ -34,6 +34,7 @@ interface PrintAndShareScreenProps {
   copies: number;
   onDone: () => void;
   onOpenMobileShareModal: () => void;
+  onSecretAdminTap?: () => void;
 }
 
 export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
@@ -43,9 +44,17 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   copies,
   onDone,
   onOpenMobileShareModal,
+  onSecretAdminTap,
 }) => {
   const sessionCopies = 1; // 1 Voucher = 1 Print Copy for initial print
+  const [logoTapCount, setLogoTapCount] = useState(0);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+
+  useEffect(() => {
+    if (logoTapCount === 0) return;
+    const t = setTimeout(() => setLogoTapCount(0), 2500);
+    return () => clearTimeout(t);
+  }, [logoTapCount]);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showPrintAnotherCopyModal, setShowPrintAnotherCopyModal] = useState(false);
@@ -268,17 +277,31 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-between p-4 sm:p-6 bg-[#faf8f5] text-zinc-900 select-none overflow-y-auto max-w-md mx-auto w-full">
+    <div className="flex-1 h-full min-h-0 flex flex-col items-center justify-between p-3 sm:p-4 bg-[#faf8f5] text-zinc-900 select-none overflow-hidden max-w-md mx-auto w-full">
       {/* Top Header */}
-      <div className="flex flex-col items-center text-center">
-        <div className="w-7 h-7 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-2">
+      <div className="flex flex-col items-center text-center shrink-0">
+        <button
+          type="button"
+          data-no-fullscreen-enforce="true"
+          onClick={() => {
+            soundEffects.playTap();
+            const next = logoTapCount + 1;
+            if (next >= 4) {
+              setLogoTapCount(0);
+              onSecretAdminTap?.();
+              return;
+            }
+            setLogoTapCount(next);
+          }}
+          className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs mb-1 cursor-pointer"
+        >
           J
-        </div>
+        </button>
 
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950">
+        <h1 className="text-lg sm:text-xl font-bold tracking-tight text-zinc-950 leading-tight">
           Your photos are ready
         </h1>
-        <p className="text-xs text-zinc-500 mt-0.5">
+        <p className="text-[11px] sm:text-xs text-zinc-500">
           {isPrinting && printStatusText
             ? printStatusText
             : isFeeding
@@ -290,18 +313,18 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       </div>
 
       {/* Simulated Thermal Output Dispenser Slot */}
-      <div className="my-auto w-full flex flex-col items-center py-2">
+      <div className="my-auto w-full flex flex-col items-center py-1 shrink-0">
         {/* Output Slot Bezel */}
-        <div className="w-64 sm:w-72 bg-zinc-200 border border-zinc-300 rounded-t-xl pt-2 px-3 pb-1 shadow-xs flex flex-col items-center">
-          <div className="w-11/12 h-2 bg-black rounded-full" />
+        <div className="w-60 sm:w-68 bg-zinc-200 border border-zinc-300 rounded-t-xl pt-1.5 px-3 pb-1 shadow-xs flex flex-col items-center">
+          <div className="w-11/12 h-1.5 bg-black rounded-full" />
         </div>
 
         {/* Paper Chute holding photostrip (pure monochrome thermal print) */}
-        <div className="w-64 sm:w-72 bg-white/40 border-x border-b border-zinc-200 rounded-b-xl p-2 pt-0 flex flex-col items-center overflow-hidden relative shadow-md">
-          <div className="w-full overflow-hidden flex justify-center py-2">
+        <div className="w-60 sm:w-68 bg-white/40 border-x border-b border-zinc-200 rounded-b-xl p-1.5 pt-0 flex flex-col items-center overflow-hidden relative shadow-md">
+          <div className="w-full overflow-hidden flex justify-center py-1">
             <div
               key={feedAnimationKey}
-              className={`relative max-h-[44vh] flex flex-col items-center transition-transform ${
+              className={`relative max-h-[30vh] sm:max-h-[34vh] flex flex-col items-center transition-transform ${
                 isFeeding ? 'animate-thermalFeed' : ''
               }`}
             >
@@ -309,7 +332,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 <img
                   src={thermalPreviewUrl || result.thermalRasterDataUrl || result.compositeDataUrl}
                   alt="Printed Thermal Photostrip"
-                  className="max-h-[40vh] w-auto object-contain select-none pointer-events-none"
+                  className="max-h-[26vh] sm:max-h-[30vh] w-auto object-contain select-none pointer-events-none"
                 />
                 {activeCopiesCount > 1 && (
                   <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px] font-mono font-bold shadow">
@@ -319,7 +342,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
               </div>
 
               {/* Perforated tear line */}
-              <div className="w-full mt-2 flex items-center justify-center gap-1.5 text-[8px] font-mono text-zinc-400 uppercase tracking-widest">
+              <div className="w-full mt-1 flex items-center justify-center gap-1.5 text-[8px] font-mono text-zinc-400 uppercase tracking-widest">
                 <span>✂ TEAR HERE</span>
               </div>
             </div>
@@ -327,7 +350,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
         </div>
 
         {/* Clarifying badge for guests */}
-        <div className="mt-2 text-[10px] text-zinc-500 text-center flex items-center gap-1 bg-white px-3 py-1 rounded-full border border-zinc-200 shadow-2xs">
+        <div className="mt-1.5 text-[10px] text-zinc-500 text-center flex items-center gap-1 bg-white px-2.5 py-0.5 rounded-full border border-zinc-200 shadow-2xs">
           <span>🖨️ Thermal receipt printed ({activeCopiesCount}x)</span>
           <span>•</span>
           <span className="text-sky-600 font-medium">Scan QR or Email for full color & GIF</span>
@@ -335,16 +358,16 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="w-full space-y-2 max-w-xs pt-1">
+      <div className="w-full space-y-1.5 max-w-xs pt-0.5 shrink-0">
         {/* Button 1: Show QR Code */}
         <button
           onClick={() => {
             soundEffects.playTap();
             setShowQrModal(true);
           }}
-          className="w-full py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium transition flex items-center justify-center gap-2 cursor-pointer"
         >
-          <QrCode className="w-4 h-4 text-zinc-600" />
+          <QrCode className="w-3.5 h-3.5 text-zinc-600" />
           <span>Show QR code (Save to phone)</span>
         </button>
 
@@ -355,21 +378,21 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             setEmailSentStatus(null);
             setShowEmailModal(true);
           }}
-          className="w-full py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium transition flex items-center justify-center gap-2 cursor-pointer"
         >
-          <Mail className="w-4 h-4 text-zinc-600" />
+          <Mail className="w-3.5 h-3.5 text-zinc-600" />
           <span>Send to Email (Color & GIF)</span>
         </button>
 
-        {/* Button 3: Save Digital & GIF (Color gallery & motion player) */}
+        {/* Button 3: Save Digital & GIF */}
         <button
           onClick={() => {
             soundEffects.playTap();
             onOpenMobileShareModal();
           }}
-          className="w-full py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-medium transition flex items-center justify-center gap-2 cursor-pointer"
         >
-          <Sparkles className="w-4 h-4 text-zinc-600" />
+          <Sparkles className="w-3.5 h-3.5 text-zinc-600" />
           <span>Save Digital & Motion GIF</span>
         </button>
 
@@ -383,9 +406,9 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             setAnotherCopySuccess('');
             setShowPrintAnotherCopyModal(true);
           }}
-          className="w-full py-2.5 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+          className="w-full py-2 px-3 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
         >
-          <Ticket className="w-4 h-4 text-zinc-700 shrink-0" />
+          <Ticket className="w-3.5 h-3.5 text-zinc-700 shrink-0" />
           <span>{isPrinting ? 'Printing Copy...' : 'Print Another Copy'}</span>
         </button>
 
@@ -395,20 +418,20 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
             soundEffects.playTap();
             onDone();
           }}
-          className="w-full py-3 rounded-full bg-black hover:bg-zinc-800 text-white text-xs sm:text-sm font-medium shadow-md active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-2.5 rounded-full bg-black hover:bg-zinc-800 text-white text-xs sm:text-sm font-medium shadow-md active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer"
         >
-          <RotateCcw className="w-4 h-4 text-white" />
+          <RotateCcw className="w-3.5 h-3.5 text-white" />
           <span>Ready? Let's snap!</span>
         </button>
 
         {/* Starting over countdown timer */}
-        <div className="text-center pt-0.5 text-[11px] text-zinc-400">
+        <div className="text-center text-[10px] text-zinc-400">
           Starting over in {countdownSeconds}s
         </div>
 
         {/* 1-Click Auto-Print Setup link if using OS System Driver without Silent Bridge yet */}
         {!silentBridgeReady && thermalPrinterService.getStatus().connectionType === 'system' && (
-          <div className="text-center pt-1">
+          <div className="text-center">
             <a
               href="./JCV-AutoPrint-Setup.bat"
               download="JCV-AutoPrint-Setup.bat"
@@ -416,7 +439,7 @@ export const PrintAndShareScreen: React.FC<PrintAndShareScreenProps> = ({
                 soundEffects.playTap();
                 setShowAutoPrintGuide(true);
               }}
-              className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-900 font-medium underline cursor-pointer"
+              className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-900 font-medium underline cursor-pointer"
             >
               <Download className="w-3 h-3" />
               <span>Disable browser print pop-up (1-click Auto-Print setup)</span>

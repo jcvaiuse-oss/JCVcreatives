@@ -9,3 +9,8 @@ coverage/
 .aistudio/
 public/assets/aistudio/*.PNG
 public/assets/aistudio/*.jpeg
+public/assets/aistudio/*.jpg
+public/assets/aistudio/*.mp4
+public/assets/aistudio/*.mov
+public/assets/aistudio/IMG_*
+public/assets/aistudio/ScreenRecording*
